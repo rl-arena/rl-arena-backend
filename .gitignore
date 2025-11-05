@@ -7,26 +7,146 @@
 *.dll
 *.so
 *.dylib
+bin/
+dist/
+build/
 
 # Test binary, built with `go test -c`
 *.test
 
-# Code coverage profiles and other test artifacts
+# Output of the go coverage tool
 *.out
-coverage.*
-*.coverprofile
-profile.cov
+coverage.txt
+coverage.html
 
-# Dependency directories (remove the comment below to include it)
-# vendor/
+# Dependency directories
+vendor/
 
 # Go workspace file
 go.work
 go.work.sum
 
-# env file
+# Environment files
 .env
+.env.local
+.env.*.local
+*.env
 
-# Editor/IDE
-# .idea/
-# .vscode/
+# IDE - VSCode
+.vscode/
+*.code-workspace
+
+# IDE - JetBrains (GoLand, IntelliJ)
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# IDE - Vim
+*.swp
+*.swo
+*~
+.*.swp
+
+# IDE - Emacs
+*~
+\#*\#
+.\#*
+
+# OS - macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# OS - Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+
+# OS - Linux
+.directory
+.Trash-*
+
+# Logs
+*.log
+logs/
+log/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Docker volumes data
+postgres_data/
+redis_data/
+mysql_data/
+
+# Air (live reload tool)
+tmp/
+.air.toml
+
+# Documentation build
+docs/_build/
+site/
+
+# Test cache
+.cache/
+
+# Go sum backup
+go.sum.backup
+
+# Profiling
+*.prof
+*.pprof
+
+# Debug files
+__debug_bin
+debug
+*.debug
+
+# Build artifacts
+*.a
+*.o
+
+# Configuration files with secrets (keep .example versions)
+config.yml
+config.yaml
+config.json
+secrets.yml
+secrets.yaml
+
+# Certificates and keys
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Lock files (except go.sum which should be committed)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Node modules (if using any frontend tools)
+node_modules/
+
+# Coverage
+coverage/
+*.coverprofile
