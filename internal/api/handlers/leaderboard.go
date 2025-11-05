@@ -2,28 +2,56 @@ package handlers
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/rl-arena/rl-arena-backend/internal/service"
 )
 
+type LeaderboardHandler struct {
+	agentService *service.AgentService
+}
+
+func NewLeaderboardHandler(agentService *service.AgentService) *LeaderboardHandler {
+	return &LeaderboardHandler{
+		agentService: agentService,
+	}
+}
+
 // GetLeaderboard 전체 리더보드 조회
-func GetLeaderboard(c *gin.Context) {
-	// TODO: ELO 순으로 정렬된 에이전트 목록
-	// agents, err := agentService.GetLeaderboard(limit)
+func (h *LeaderboardHandler) GetLeaderboard(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+
+	agents, err := h.agentService.GetLeaderboard("", limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to get leaderboard",
+		})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"leaderboard": []gin.H{},
+		"leaderboard": agents,
+		"total":       len(agents),
 	})
 }
 
 // GetLeaderboardByEnvironment 특정 환경의 리더보드 조회
-func GetLeaderboardByEnvironment(c *gin.Context) {
+func (h *LeaderboardHandler) GetLeaderboardByEnvironment(c *gin.Context) {
 	envId := c.Param("envId")
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
 
-	// TODO: 특정 환경의 리더보드
+	agents, err := h.agentService.GetLeaderboard(envId, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to get leaderboard",
+		})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"environmentId": envId,
-		"leaderboard":   []gin.H{},
+		"leaderboard":   agents,
+		"total":         len(agents),
 	})
 }

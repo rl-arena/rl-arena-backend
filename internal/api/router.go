@@ -8,6 +8,7 @@ import (
 	"github.com/rl-arena/rl-arena-backend/internal/repository"
 	"github.com/rl-arena/rl-arena-backend/internal/service"
 	"github.com/rl-arena/rl-arena-backend/pkg/database"
+	"github.com/rl-arena/rl-arena-backend/pkg/storage"
 )
 
 // SetupRouter API 라우터 설정
@@ -23,23 +24,36 @@ func SetupRouter(cfg *config.Config, db *database.DB) *gin.Engine {
 	router.Use(middleware.Logger())
 	router.Use(middleware.CORS(cfg.CORSAllowedOrigins))
 
+	// Storage 초기화
+	storageManager := storage.NewStorage(cfg.StoragePath)
+
 	// Repository 초기화
 	userRepo := repository.NewUserRepository(db)
+	agentRepo := repository.NewAgentRepository(db)
+	submissionRepo := repository.NewSubmissionRepository(db)
 
 	// Service 초기화
 	userService := service.NewUserService(userRepo)
+	agentService := service.NewAgentService(agentRepo)
+	submissionService := service.NewSubmissionService(submissionRepo, agentRepo, storageManager)
 
 	// Handler 초기화
 	authHandler := handlers.NewAuthHandler(userService, cfg)
 	userHandler := handlers.NewUserHandler(userService)
+	agentHandler := handlers.NewAgentHandler(agentService)
+	submissionHandler := handlers.NewSubmissionHandler(submissionService)
+	leaderboardHandler := handlers.NewLeaderboardHandler(agentService)
 
 	// Health check
 	router.GET("/health", handlers.HealthCheck)
 
+	// 정적 파일 서빙 (업로드된 파일 다운로드용)
+	router.Static("/storage", cfg.StoragePath)
+
 	// API v1
 	v1 := router.Group("/api/v1")
 	{
-		// Auth routes (인증 불필요)
+		// Auth routes
 		auth := v1.Group("/auth")
 		{
 			auth.POST("/login", authHandler.Login)
@@ -49,19 +63,21 @@ func SetupRouter(cfg *config.Config, db *database.DB) *gin.Engine {
 		// Agent routes
 		agents := v1.Group("/agents")
 		{
-			agents.GET("", handlers.ListAgents)
-			agents.GET("/:id", handlers.GetAgent)
-			agents.POST("", middleware.Auth(cfg), handlers.CreateAgent)
-			agents.PUT("/:id", middleware.Auth(cfg), handlers.UpdateAgent)
-			agents.DELETE("/:id", middleware.Auth(cfg), handlers.DeleteAgent)
+			agents.GET("", agentHandler.ListAgents)
+			agents.GET("/my", middleware.Auth(cfg), agentHandler.GetMyAgents)
+			agents.GET("/:id", agentHandler.GetAgent)
+			agents.POST("", middleware.Auth(cfg), agentHandler.CreateAgent)
+			agents.PUT("/:id", middleware.Auth(cfg), agentHandler.UpdateAgent)
+			agents.DELETE("/:id", middleware.Auth(cfg), agentHandler.DeleteAgent)
 		}
 
 		// Submission routes
 		submissions := v1.Group("/submissions")
 		{
-			submissions.POST("", middleware.Auth(cfg), handlers.CreateSubmission)
-			submissions.GET("/:id", handlers.GetSubmission)
-			submissions.GET("/agent/:agentId", handlers.ListSubmissionsByAgent)
+			submissions.POST("", middleware.Auth(cfg), submissionHandler.CreateSubmission)
+			submissions.GET("/:id", submissionHandler.GetSubmission)
+			submissions.GET("/agent/:agentId", submissionHandler.ListSubmissionsByAgent)
+			submissions.PUT("/:id/activate", middleware.Auth(cfg), submissionHandler.SetActiveSubmission)
 		}
 
 		// Match routes
@@ -75,11 +91,11 @@ func SetupRouter(cfg *config.Config, db *database.DB) *gin.Engine {
 		// Leaderboard routes
 		leaderboard := v1.Group("/leaderboard")
 		{
-			leaderboard.GET("", handlers.GetLeaderboard)
-			leaderboard.GET("/environment/:envId", handlers.GetLeaderboardByEnvironment)
+			leaderboard.GET("", leaderboardHandler.GetLeaderboard)
+			leaderboard.GET("/environment/:envId", leaderboardHandler.GetLeaderboardByEnvironment)
 		}
 
-		// User routes (모두 인증 필요)
+		// User routes
 		users := v1.Group("/users")
 		users.Use(middleware.Auth(cfg))
 		{
