@@ -1,14 +1,26 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rl-arena/rl-arena-backend/internal/models"
+	"github.com/rl-arena/rl-arena-backend/internal/service"
 )
 
+type UserHandler struct {
+	userService *service.UserService
+}
+
+func NewUserHandler(userService *service.UserService) *UserHandler {
+	return &UserHandler{
+		userService: userService,
+	}
+}
+
 // GetCurrentUser 현재 사용자 정보 조회
-func GetCurrentUser(c *gin.Context) {
+func (h *UserHandler) GetCurrentUser(c *gin.Context) {
 	userId, exists := c.Get("userId")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{
@@ -17,17 +29,37 @@ func GetCurrentUser(c *gin.Context) {
 		return
 	}
 
-	// TODO: 데이터베이스에서 조회
-	// user, err := userService.GetByID(userId.(string))
+	// 사용자 조회
+	user, err := h.userService.GetByID(userId.(string))
+	if err != nil {
+		if errors.Is(err, service.ErrUserNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "User not found",
+			})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to get user",
+		})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"userId":  userId, // ← 사용!
-		"message": "User details - TODO: implement",
+		"user": gin.H{
+			"id":        user.ID,
+			"username":  user.Username,
+			"email":     user.Email,
+			"fullName":  user.FullName,
+			"avatarUrl": user.AvatarURL,
+			"createdAt": user.CreatedAt,
+			"updatedAt": user.UpdatedAt,
+		},
 	})
 }
 
 // UpdateCurrentUser 현재 사용자 정보 수정
-func UpdateCurrentUser(c *gin.Context) {
+func (h *UserHandler) UpdateCurrentUser(c *gin.Context) {
 	var req models.UpdateUserRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -39,11 +71,29 @@ func UpdateCurrentUser(c *gin.Context) {
 
 	userId, _ := c.Get("userId")
 
-	// TODO: 데이터베이스 업데이트
-	// user, err := userService.Update(userId.(string), req)
+	// avatarURL 포인터 처리
+	var avatarURL *string
+	if req.AvatarURL != "" {
+		avatarURL = &req.AvatarURL
+	}
+
+	// 사용자 업데이트
+	err := h.userService.Update(userId.(string), req.FullName, avatarURL)
+	if err != nil {
+		if errors.Is(err, service.ErrUserNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "User not found",
+			})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to update user",
+		})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "User updated successfully",
-		"userId":  userId, // ← 사용!
 	})
 }

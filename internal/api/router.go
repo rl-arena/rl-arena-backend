@@ -5,33 +5,45 @@ import (
 	"github.com/rl-arena/rl-arena-backend/internal/api/handlers"
 	"github.com/rl-arena/rl-arena-backend/internal/api/middleware"
 	"github.com/rl-arena/rl-arena-backend/internal/config"
+	"github.com/rl-arena/rl-arena-backend/internal/repository"
+	"github.com/rl-arena/rl-arena-backend/internal/service"
+	"github.com/rl-arena/rl-arena-backend/pkg/database"
 )
 
 // SetupRouter API 라우터 설정
-func SetupRouter(cfg *config.Config) *gin.Engine {
-	// Production 모드 설정
+func SetupRouter(cfg *config.Config, db *database.DB) *gin.Engine {
 	if cfg.Env == "production" {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
 	router := gin.New()
 
-	// 전역 미들웨어 설정
+	// 전역 미들웨어
 	router.Use(gin.Recovery())
 	router.Use(middleware.Logger())
 	router.Use(middleware.CORS(cfg.CORSAllowedOrigins))
 
+	// Repository 초기화
+	userRepo := repository.NewUserRepository(db)
+
+	// Service 초기화
+	userService := service.NewUserService(userRepo)
+
+	// Handler 초기화
+	authHandler := handlers.NewAuthHandler(userService, cfg)
+	userHandler := handlers.NewUserHandler(userService)
+
 	// Health check
 	router.GET("/health", handlers.HealthCheck)
 
-	// API v1 그룹
+	// API v1
 	v1 := router.Group("/api/v1")
 	{
 		// Auth routes (인증 불필요)
 		auth := v1.Group("/auth")
 		{
-			auth.POST("/login", handlers.Login(cfg))
-			auth.POST("/register", handlers.Register(cfg))
+			auth.POST("/login", authHandler.Login)
+			auth.POST("/register", authHandler.Register)
 		}
 
 		// Agent routes
@@ -71,8 +83,8 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 		users := v1.Group("/users")
 		users.Use(middleware.Auth(cfg))
 		{
-			users.GET("/me", handlers.GetCurrentUser)
-			users.PUT("/me", handlers.UpdateCurrentUser)
+			users.GET("/me", userHandler.GetCurrentUser)
+			users.PUT("/me", userHandler.UpdateCurrentUser)
 		}
 	}
 
