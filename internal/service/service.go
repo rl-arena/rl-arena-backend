@@ -11,8 +11,7 @@ import (
 )
 
 var (
-	ErrSubmissionNotFound = errors.New("submission not found")
-	ErrInvalidFile        = errors.New("invalid file")
+	ErrInvalidFile = errors.New("invalid file")
 )
 
 type SubmissionService struct {

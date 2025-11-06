@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -94,6 +95,9 @@ func (h *AgentHandler) CreateAgent(c *gin.Context) {
 		req.EnvironmentID,
 	)
 	if err != nil {
+		// 에러 로깅 추가
+		fmt.Printf("Agent creation error: %v\n", err)
+
 		if errors.Is(err, service.ErrInvalidEnvironment) {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": "Invalid environment",
@@ -101,8 +105,16 @@ func (h *AgentHandler) CreateAgent(c *gin.Context) {
 			return
 		}
 
+		if errors.Is(err, service.ErrInvalidInput) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "Invalid input",
+			})
+			return
+		}
+
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to create agent",
+			"error":   "Failed to create agent",
+			"details": err.Error(),
 		})
 		return
 	}

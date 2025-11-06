@@ -1,18 +1,10 @@
 package service
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/rl-arena/rl-arena-backend/internal/models"
 	"github.com/rl-arena/rl-arena-backend/internal/repository"
-)
-
-var (
-	ErrUserNotFound       = errors.New("user not found")
-	ErrInvalidCredentials = errors.New("invalid credentials")
-	ErrUserAlreadyExists  = errors.New("user already exists")
-	ErrInvalidInput       = errors.New("invalid input")
 )
 
 type UserService struct {

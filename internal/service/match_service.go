@@ -11,7 +11,6 @@ import (
 )
 
 var (
-	ErrMatchNotFound        = errors.New("match not found")
 	ErrAgentNotReady        = errors.New("agent does not have active submission")
 	ErrSameAgent            = errors.New("cannot match agent against itself")
 	ErrDifferentEnvironment = errors.New("agents must be in the same environment")

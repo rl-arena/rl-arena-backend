@@ -1,17 +1,10 @@
 package service
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/rl-arena/rl-arena-backend/internal/models"
 	"github.com/rl-arena/rl-arena-backend/internal/repository"
-)
-
-var (
-	ErrAgentNotFound      = errors.New("agent not found")
-	ErrUnauthorized       = errors.New("unauthorized")
-	ErrInvalidEnvironment = errors.New("invalid environment")
 )
 
 type AgentService struct {
