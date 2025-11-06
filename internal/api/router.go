@@ -8,6 +8,7 @@ import (
 	"github.com/rl-arena/rl-arena-backend/internal/repository"
 	"github.com/rl-arena/rl-arena-backend/internal/service"
 	"github.com/rl-arena/rl-arena-backend/pkg/database"
+	"github.com/rl-arena/rl-arena-backend/pkg/executor"
 	"github.com/rl-arena/rl-arena-backend/pkg/storage"
 )
 
@@ -27,27 +28,34 @@ func SetupRouter(cfg *config.Config, db *database.DB) *gin.Engine {
 	// Storage 초기화
 	storageManager := storage.NewStorage(cfg.StoragePath)
 
+	// Executor 클라이언트 초기화
+	executorClient := executor.NewClient(cfg.ExecutorURL)
+
 	// Repository 초기화
 	userRepo := repository.NewUserRepository(db)
 	agentRepo := repository.NewAgentRepository(db)
 	submissionRepo := repository.NewSubmissionRepository(db)
+	matchRepo := repository.NewMatchRepository(db)
 
 	// Service 초기화
+	eloService := service.NewELOService()
 	userService := service.NewUserService(userRepo)
 	agentService := service.NewAgentService(agentRepo)
 	submissionService := service.NewSubmissionService(submissionRepo, agentRepo, storageManager)
+	matchService := service.NewMatchService(matchRepo, agentRepo, submissionRepo, eloService, executorClient)
 
 	// Handler 초기화
 	authHandler := handlers.NewAuthHandler(userService, cfg)
 	userHandler := handlers.NewUserHandler(userService)
 	agentHandler := handlers.NewAgentHandler(agentService)
 	submissionHandler := handlers.NewSubmissionHandler(submissionService)
+	matchHandler := handlers.NewMatchHandler(matchService)
 	leaderboardHandler := handlers.NewLeaderboardHandler(agentService)
 
 	// Health check
 	router.GET("/health", handlers.HealthCheck)
 
-	// 정적 파일 서빙 (업로드된 파일 다운로드용)
+	// 정적 파일 서빙
 	router.Static("/storage", cfg.StoragePath)
 
 	// API v1
@@ -83,9 +91,10 @@ func SetupRouter(cfg *config.Config, db *database.DB) *gin.Engine {
 		// Match routes
 		matches := v1.Group("/matches")
 		{
+			matches.POST("", middleware.Auth(cfg), matchHandler.CreateMatch) // 수동 매치 생성
 			matches.GET("", handlers.ListMatches)
-			matches.GET("/:id", handlers.GetMatch)
-			matches.GET("/agent/:agentId", handlers.ListMatchesByAgent)
+			matches.GET("/:id", matchHandler.GetMatch)
+			matches.GET("/agent/:agentId", matchHandler.ListMatchesByAgent)
 		}
 
 		// Leaderboard routes
