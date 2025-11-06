@@ -12,6 +12,7 @@ import (
 
 	"github.com/rl-arena/rl-arena-backend/internal/api"
 	"github.com/rl-arena/rl-arena-backend/internal/config"
+	"github.com/rl-arena/rl-arena-backend/pkg/database"
 	"github.com/rl-arena/rl-arena-backend/pkg/logger"
 )
 
@@ -31,8 +32,17 @@ func main() {
 		"env", cfg.Env,
 	)
 
-	// 라우터 설정
-	router := api.SetupRouter(cfg)
+	// 데이터베이스 연결
+	db, err := database.Connect(cfg.DatabaseURL)
+	if err != nil {
+		logger.Fatal("Failed to connect to database", "error", err)
+	}
+	defer db.Close()
+
+	logger.Info("Database connection established")
+
+	// 라우터 설정 (DB 전달)
+	router := api.SetupRouter(cfg, db)
 
 	// 서버 설정
 	srv := &http.Server{

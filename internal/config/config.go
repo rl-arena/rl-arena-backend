@@ -32,6 +32,9 @@ type Config struct {
 
 	// Executor Service
 	ExecutorURL string
+
+	// Storage
+	StoragePath string // 파일 저장 경로
 }
 
 func Load() (*Config, error) {
@@ -49,6 +52,7 @@ func Load() (*Config, error) {
 		MatchmakingInterval: parseDuration(getEnv("MATCHMAKING_INTERVAL", "10s")),
 		MaxELODifference:    200,
 		ExecutorURL:         getEnv("EXECUTOR_URL", "http://localhost:8081"),
+		StoragePath:         getEnv("STORAGE_PATH", "./storage"),
 		CORSAllowedOrigins:  []string{"http://localhost:3000", "http://localhost:5173"},
 	}
 

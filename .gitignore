@@ -150,3 +150,8 @@ node_modules/
 # Coverage
 coverage/
 *.coverprofile
+
+# Storage
+storage/
+uploads/
+!storage/.gitkeep

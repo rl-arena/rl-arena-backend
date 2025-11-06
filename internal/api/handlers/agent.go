@@ -1,38 +1,73 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rl-arena/rl-arena-backend/internal/models"
+	"github.com/rl-arena/rl-arena-backend/internal/service"
 )
 
+type AgentHandler struct {
+	agentService *service.AgentService
+}
+
+func NewAgentHandler(agentService *service.AgentService) *AgentHandler {
+	return &AgentHandler{
+		agentService: agentService,
+	}
+}
+
 // ListAgents 모든 에이전트 목록 조회
-func ListAgents(c *gin.Context) {
-	// TODO: 데이터베이스에서 조회
-	agents := []models.Agent{}
+func (h *AgentHandler) ListAgents(c *gin.Context) {
+	// 페이지네이션 파라미터
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+
+	agents, total, err := h.agentService.List(page, pageSize)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to get agents",
+		})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"agents": agents,
-		"total":  len(agents),
+		"agents":   agents,
+		"total":    total,
+		"page":     page,
+		"pageSize": pageSize,
 	})
 }
 
 // GetAgent 특정 에이전트 조회
-func GetAgent(c *gin.Context) {
+func (h *AgentHandler) GetAgent(c *gin.Context) {
 	id := c.Param("id")
 
-	// TODO: 데이터베이스에서 조회
-	// agent, err := agentService.GetByID(id)
+	agent, err := h.agentService.GetByID(id)
+	if err != nil {
+		if errors.Is(err, service.ErrAgentNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "Agent not found",
+			})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to get agent",
+		})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"id":      id,
-		"message": "Agent details - TODO: implement",
+		"agent": agent,
 	})
 }
 
 // CreateAgent 새 에이전트 생성
-func CreateAgent(c *gin.Context) {
+func (h *AgentHandler) CreateAgent(c *gin.Context) {
 	var req models.CreateAgentRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -42,7 +77,7 @@ func CreateAgent(c *gin.Context) {
 		return
 	}
 
-	// context에서 userId 가져오기 (Auth 미들웨어에서 설정)
+	// context에서 userId 가져오기
 	userId, exists := c.Get("userId")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{
@@ -51,18 +86,35 @@ func CreateAgent(c *gin.Context) {
 		return
 	}
 
-	// TODO: 데이터베이스에 저장
-	// agent, err := agentService.Create(userId.(string), req)
+	// 에이전트 생성
+	agent, err := h.agentService.Create(
+		userId.(string),
+		req.Name,
+		req.Description,
+		req.EnvironmentID,
+	)
+	if err != nil {
+		if errors.Is(err, service.ErrInvalidEnvironment) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "Invalid environment",
+			})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to create agent",
+		})
+		return
+	}
 
 	c.JSON(http.StatusCreated, gin.H{
 		"message": "Agent created successfully",
-		"name":    req.Name,
-		"userId":  userId, // ← 이제 userId 사용!
+		"agent":   agent,
 	})
 }
 
 // UpdateAgent 에이전트 수정
-func UpdateAgent(c *gin.Context) {
+func (h *AgentHandler) UpdateAgent(c *gin.Context) {
 	id := c.Param("id")
 	var req models.UpdateAgentRequest
 
@@ -75,27 +127,87 @@ func UpdateAgent(c *gin.Context) {
 
 	userId, _ := c.Get("userId")
 
-	// TODO: 소유자 확인 및 업데이트
-	// agent, err := agentService.Update(id, userId.(string), req)
+	// 에이전트 업데이트
+	err := h.agentService.Update(id, userId.(string), req.Name, req.Description)
+	if err != nil {
+		if errors.Is(err, service.ErrAgentNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "Agent not found",
+			})
+			return
+		}
+
+		if errors.Is(err, service.ErrUnauthorized) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "You don't have permission to update this agent",
+			})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to update agent",
+		})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Agent updated successfully",
-		"id":      id,
-		"userId":  userId, // ← 사용!
 	})
 }
 
 // DeleteAgent 에이전트 삭제
-func DeleteAgent(c *gin.Context) {
+func (h *AgentHandler) DeleteAgent(c *gin.Context) {
 	id := c.Param("id")
 	userId, _ := c.Get("userId")
 
-	// TODO: 소유자 확인 및 삭제
-	// err := agentService.Delete(id, userId.(string))
+	// 에이전트 삭제
+	err := h.agentService.Delete(id, userId.(string))
+	if err != nil {
+		if errors.Is(err, service.ErrAgentNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "Agent not found",
+			})
+			return
+		}
+
+		if errors.Is(err, service.ErrUnauthorized) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "You don't have permission to delete this agent",
+			})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to delete agent",
+		})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Agent deleted successfully",
-		"id":      id,
-		"userId":  userId, // ← 사용!
+	})
+}
+
+// GetMyAgents 내 에이전트 목록 조회
+func (h *AgentHandler) GetMyAgents(c *gin.Context) {
+	userId, exists := c.Get("userId")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "User not authenticated",
+		})
+		return
+	}
+
+	agents, err := h.agentService.GetByUserID(userId.(string))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to get agents",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"agents": agents,
+		"total":  len(agents),
 	})
 }
