@@ -90,8 +90,46 @@ func (s *SubmissionService) Create(agentID, userID string, file *multipart.FileH
 		return nil, fmt.Errorf("failed to create submission: %w", err)
 	}
 
-	// TODO: 빌드 큐에 추가 (나중에 구현)
-	// buildQueue.Enqueue(submission.ID)
+	// Docker 이미지 빌드 시작 (비동기)
+	if s.builderService != nil {
+		go func() {
+			ctx := context.Background()
+			
+			// 상태를 'building'으로 업데이트
+			status := models.SubmissionStatusBuilding
+			if err := s.submissionRepo.UpdateStatus(submission.ID, status, nil, nil); err != nil {
+				s.logger.Error("Failed to update submission status to building",
+					zap.String("submissionId", submission.ID),
+					zap.Error(err))
+				return
+			}
+			
+			s.logger.Info("Starting Docker image build",
+				zap.String("submissionId", submission.ID),
+				zap.String("agentId", agentID),
+				zap.String("codeUrl", codeURL))
+			
+			// Kaniko 빌드 실행
+			if err := s.builderService.BuildAgentImage(ctx, submission); err != nil {
+				s.logger.Error("Docker image build failed",
+					zap.String("submissionId", submission.ID),
+					zap.Error(err))
+				
+				// 빌드 실패 상태로 업데이트
+				errMsg := err.Error()
+				failedStatus := models.SubmissionStatusBuildFailed
+				if updateErr := s.submissionRepo.UpdateStatus(submission.ID, failedStatus, nil, &errMsg); updateErr != nil {
+					s.logger.Error("Failed to update submission status to build_failed",
+						zap.String("submissionId", submission.ID),
+						zap.Error(updateErr))
+				}
+				return
+			}
+			
+			s.logger.Info("Docker image build completed",
+				zap.String("submissionId", submission.ID))
+		}()
+	}
 
 	return submission, nil
 }
