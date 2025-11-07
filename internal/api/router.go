@@ -100,7 +100,7 @@ func SetupRouter(cfg *config.Config, db *database.DB) *gin.Engine {
 	userHandler := handlers.NewUserHandler(userService)
 	agentHandler := handlers.NewAgentHandler(agentService)
 	submissionHandler := handlers.NewSubmissionHandler(submissionService)
-	matchHandler := handlers.NewMatchHandler(matchService)
+	matchHandler := handlers.NewMatchHandler(matchService, storageManager)
 	leaderboardHandler := handlers.NewLeaderboardHandler(agentService)
 	wsHandler := handlers.NewWebSocketHandler(wsHub)
 
@@ -155,7 +155,10 @@ func SetupRouter(cfg *config.Config, db *database.DB) *gin.Engine {
 		{
 			matches.POST("", middleware.Auth(cfg), matchHandler.CreateMatch) // 수동 매치 생성
 			matches.GET("", handlers.ListMatches)
+			matches.GET("/replays", matchHandler.GetMatchesWithReplays)       // 리플레이 있는 매치 목록 (Watch용)
 			matches.GET("/:id", matchHandler.GetMatch)
+			matches.GET("/:id/replay", matchHandler.GetMatchReplay)           // 리플레이 파일 다운로드
+			matches.GET("/:id/replay-url", matchHandler.GetMatchReplayURL)    // 리플레이 URL 조회
 			matches.GET("/agent/:agentId", matchHandler.ListMatchesByAgent)
 		}
 

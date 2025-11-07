@@ -23,6 +23,7 @@ type Match struct {
 	Agent1ELOChange *int        `json:"agent1EloChange,omitempty" db:"agent1_elo_change"`
 	Agent2ELOChange *int        `json:"agent2EloChange,omitempty" db:"agent2_elo_change"`
 	ReplayURL       *string     `json:"replayUrl,omitempty" db:"replay_url"`
+	ReplayHTMLURL   *string     `json:"replayHtmlUrl,omitempty" db:"replay_html_url"`
 	ErrorMessage    *string     `json:"errorMessage,omitempty" db:"error_message"`
 	StartedAt       *time.Time  `json:"startedAt,omitempty" db:"started_at"`
 	CompletedAt     *time.Time  `json:"completedAt,omitempty" db:"completed_at"`
