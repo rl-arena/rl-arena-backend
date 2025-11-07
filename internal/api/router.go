@@ -116,8 +116,9 @@ func SetupRouter(cfg *config.Config, db *database.DB) *gin.Engine {
 		// WebSocket endpoint
 		v1.GET("/ws", middleware.Auth(cfg), wsHandler.HandleWebSocket)
 
-		// Auth routes
+		// Auth routes (rate limited by IP)
 		auth := v1.Group("/auth")
+		auth.Use(middleware.AuthRateLimit())
 		{
 			auth.POST("/login", authHandler.Login)
 			auth.POST("/register", authHandler.Register)
@@ -134,31 +135,40 @@ func SetupRouter(cfg *config.Config, db *database.DB) *gin.Engine {
 			agents.DELETE("/:id", middleware.Auth(cfg), agentHandler.DeleteAgent)
 		}
 
-		// Submission routes
+		// Submission routes (rate limited)
 		submissions := v1.Group("/submissions")
 		{
-			submissions.POST("", middleware.Auth(cfg), submissionHandler.CreateSubmission)
+			// Strict rate limit for submission creation (5 per minute per user)
+			submissions.POST("", middleware.Auth(cfg), middleware.SubmissionRateLimit(), submissionHandler.CreateSubmission)
+			
+			// General endpoints
 			submissions.GET("/:id", submissionHandler.GetSubmission)
 			submissions.GET("/agent/:agentId", submissionHandler.ListSubmissionsByAgent)
 			submissions.PUT("/:id/activate", middleware.Auth(cfg), submissionHandler.SetActiveSubmission)
 			
-			// 빌드 관련 엔드포인트
+			// Build-related endpoints
 			submissions.GET("/:id/build-status", submissionHandler.GetBuildStatus)
 			submissions.GET("/:id/build-logs", submissionHandler.GetBuildLogs)
 			
-			// 재빌드 엔드포인트
-			submissions.POST("/:id/rebuild", middleware.Auth(cfg), submissionHandler.RebuildSubmission)
+			// Rebuild endpoint (same rate limit as submission)
+			submissions.POST("/:id/rebuild", middleware.Auth(cfg), middleware.SubmissionRateLimit(), submissionHandler.RebuildSubmission)
 		}
 
-		// Match routes
+		// Match routes (rate limited)
 		matches := v1.Group("/matches")
 		{
-			matches.POST("", middleware.Auth(cfg), matchHandler.CreateMatch) // 수동 매치 생성
+			// Manual match creation (10 per minute per user)
+			matches.POST("", middleware.Auth(cfg), middleware.MatchCreationRateLimit(), matchHandler.CreateMatch)
+			
+			// General match endpoints
 			matches.GET("", handlers.ListMatches)
-			matches.GET("/replays", matchHandler.GetMatchesWithReplays)       // 리플레이 있는 매치 목록 (Watch용)
+			matches.GET("/replays", matchHandler.GetMatchesWithReplays)
 			matches.GET("/:id", matchHandler.GetMatch)
-			matches.GET("/:id/replay", matchHandler.GetMatchReplay)           // 리플레이 파일 다운로드
-			matches.GET("/:id/replay-url", matchHandler.GetMatchReplayURL)    // 리플레이 URL 조회
+			
+			// Replay endpoints (rate limited to prevent abuse)
+			matches.GET("/:id/replay", middleware.ReplayDownloadRateLimit(), matchHandler.GetMatchReplay)
+			matches.GET("/:id/replay-url", matchHandler.GetMatchReplayURL)
+			
 			matches.GET("/agent/:agentId", matchHandler.ListMatchesByAgent)
 		}
 
