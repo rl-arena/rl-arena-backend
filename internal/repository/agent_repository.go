@@ -216,6 +216,73 @@ func (r *AgentRepository) FindByEnvironmentID(environmentID string, limit, offse
 	return agents, nil
 }
 
+// FindByEnvironmentIDWithPublicity 특정 환경의 에이전트 조회 (Public/Private 리더보드 분리)
+func (r *AgentRepository) FindByEnvironmentIDWithPublicity(environmentID string, isPublic *bool, limit, offset int) ([]*models.Agent, error) {
+	// Base query with agent stats
+	baseQuery := `
+		SELECT DISTINCT a.id, a.user_id, a.name, a.description, a.environment_id, 
+		       a.elo, a.wins, a.losses, a.draws, a.total_matches, 
+		       a.active_submission_id, a.created_at, a.updated_at
+		FROM agents a
+		INNER JOIN matches m ON (m.agent1_id = a.id OR m.agent2_id = a.id)
+		WHERE a.environment_id = $1
+	`
+
+	var args []interface{}
+	args = append(args, environmentID)
+
+	// Add is_public filter if specified
+	if isPublic != nil {
+		baseQuery += " AND m.is_public = $2"
+		args = append(args, *isPublic)
+	}
+
+	// Group by and order
+	baseQuery += `
+		GROUP BY a.id, a.user_id, a.name, a.description, a.environment_id,
+		         a.elo, a.wins, a.losses, a.draws, a.total_matches,
+		         a.active_submission_id, a.created_at, a.updated_at
+		ORDER BY a.elo DESC
+	`
+
+	// Add limit and offset
+	limitOffset := len(args) + 1
+	baseQuery += fmt.Sprintf(" LIMIT $%d OFFSET $%d", limitOffset, limitOffset+1)
+	args = append(args, limit, offset)
+
+	rows, err := r.db.Query(baseQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query agents with publicity: %w", err)
+	}
+	defer rows.Close()
+
+	var agents []*models.Agent
+	for rows.Next() {
+		agent := &models.Agent{}
+		err := rows.Scan(
+			&agent.ID,
+			&agent.UserID,
+			&agent.Name,
+			&agent.Description,
+			&agent.EnvironmentID,
+			&agent.ELO,
+			&agent.Wins,
+			&agent.Losses,
+			&agent.Draws,
+			&agent.TotalMatches,
+			&agent.ActiveSubmissionID,
+			&agent.CreatedAt,
+			&agent.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan agent: %w", err)
+		}
+		agents = append(agents, agent)
+	}
+
+	return agents, nil
+}
+
 // Update 에이전트 정보 업데이트
 func (r *AgentRepository) Update(id, name, description string) error {
 	query := `

@@ -40,17 +40,21 @@ func (h *LeaderboardHandler) GetLeaderboard(c *gin.Context) {
 func (h *LeaderboardHandler) GetLeaderboardByEnvironment(c *gin.Context) {
 	envId := c.Param("envId")
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	
+	// type 파라미터: public, private, all (기본값: public)
+	leaderboardType := c.DefaultQuery("type", "public")
 
-	agents, err := h.agentService.GetLeaderboard(envId, limit)
+	agents, err := h.agentService.GetLeaderboardWithType(envId, leaderboardType, limit)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to get leaderboard",
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
 		})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"environmentId": envId,
+		"type":          leaderboardType,
 		"leaderboard":   agents,
 		"total":         len(agents),
 	})

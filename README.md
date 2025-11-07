@@ -16,7 +16,8 @@
 - **Match System**: Execute matches between agents via Executor service
 - **ELO Rating**: Chess-like rating system for competitive rankings
 - **Replay System**: Download match replays in JSON or HTML format (Kaggle-style)
-- **Leaderboard**: Real-time rankings by ELO and environment
+- **Public/Private Leaderboard**: Separate rankings for real-time and post-competition (Kaggle-style)
+- **API Rate Limiting**: Token Bucket algorithm-based rate limiting for all endpoints
 - **Real-time Monitoring**: Kubernetes Watch API + WebSocket notifications
 - **Security Scanning**: Trivy vulnerability scanning for all images
 - **RESTful API**: Well-structured endpoints with comprehensive error handling
@@ -155,7 +156,11 @@ make build
 - `GET /api/v1/matches/replays?agentId=X` - List replays (Watch feature)
 
 **Leaderboard**
-- `GET /api/v1/leaderboard` - Get rankings by environment
+- `GET /api/v1/leaderboard` - Get all rankings
+- `GET /api/v1/leaderboard/:envId?type=public|private|all` - Get environment-specific leaderboard
+  - `type=public` (default): Public leaderboard (real-time rankings)
+  - `type=private`: Private leaderboard (post-competition rankings)
+  - `type=all`: All matches regardless of publicity
 
 **WebSocket**
 - `GET /api/v1/ws` - Real-time build and match notifications

@@ -110,6 +110,46 @@ func (s *AgentService) GetLeaderboard(environmentID string, limit int) ([]*model
 	return agents, nil
 }
 
+// GetLeaderboardWithType Public/Private 리더보드 조회
+func (s *AgentService) GetLeaderboardWithType(environmentID, leaderboardType string, limit int) ([]*models.Agent, error) {
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
+
+	// leaderboardType 검증 (public, private, all)
+	var isPublic *bool
+	switch leaderboardType {
+	case "public":
+		publicVal := true
+		isPublic = &publicVal
+	case "private":
+		privateVal := false
+		isPublic = &privateVal
+	case "all", "":
+		// nil로 설정하여 필터링하지 않음
+		isPublic = nil
+	default:
+		return nil, fmt.Errorf("invalid leaderboard type: %s (must be 'public', 'private', or 'all')", leaderboardType)
+	}
+
+	var agents []*models.Agent
+	var err error
+
+	if environmentID == "" {
+		// 전체 리더보드 - 기존 메서드 사용 (is_public 필터링 없음)
+		agents, err = s.agentRepo.FindAll(limit, 0)
+	} else {
+		// 특정 환경 리더보드 - Public/Private 분리
+		agents, err = s.agentRepo.FindByEnvironmentIDWithPublicity(environmentID, isPublic, limit, 0)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get leaderboard: %w", err)
+	}
+
+	return agents, nil
+}
+
 // Update 에이전트 정보 업데이트
 func (s *AgentService) Update(id, userID, name, description string) error {
 	// 에이전트 존재 확인

@@ -22,6 +22,7 @@ type Match struct {
 	Agent2Score     *float64    `json:"agent2Score,omitempty" db:"agent2_score"`
 	Agent1ELOChange *int        `json:"agent1EloChange,omitempty" db:"agent1_elo_change"`
 	Agent2ELOChange *int        `json:"agent2EloChange,omitempty" db:"agent2_elo_change"`
+	IsPublic        bool        `json:"isPublic" db:"is_public"`
 	ReplayURL       *string     `json:"replayUrl,omitempty" db:"replay_url"`
 	ReplayHTMLURL   *string     `json:"replayHtmlUrl,omitempty" db:"replay_html_url"`
 	ErrorMessage    *string     `json:"errorMessage,omitempty" db:"error_message"`
