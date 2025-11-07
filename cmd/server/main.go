@@ -10,11 +10,33 @@ import (
 	"syscall"
 	"time"
 
+	_ "github.com/rl-arena/rl-arena-backend/docs" // Swagger docs
 	"github.com/rl-arena/rl-arena-backend/internal/api"
 	"github.com/rl-arena/rl-arena-backend/internal/config"
 	"github.com/rl-arena/rl-arena-backend/pkg/database"
 	"github.com/rl-arena/rl-arena-backend/pkg/logger"
+	"github.com/rl-arena/rl-arena-backend/pkg/ratelimit"
 )
+
+// @title RL-Arena API
+// @version 1.0
+// @description REST API server for RL-Arena - A competitive reinforcement learning platform with ELO-based rankings
+// @termsOfService http://swagger.io/terms/
+
+// @contact.name RL-Arena Support
+// @contact.url https://github.com/rl-arena/rl-arena-backend/issues
+// @contact.email support@rl-arena.com
+
+// @license.name Apache 2.0
+// @license.url http://www.apache.org/licenses/LICENSE-2.0.html
+
+// @host localhost:8080
+// @BasePath /api/v1
+
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description Type "Bearer" followed by a space and JWT token.
 
 func main() {
 	// 설정 로드
@@ -41,8 +63,46 @@ func main() {
 
 	logger.Info("Database connection established")
 
-	// 라우터 설정 (DB 전달)
-	router := api.SetupRouter(cfg, db)
+	// Redis Rate Limiter 초기화 (선택적)
+	var redisLimiter *ratelimit.RedisRateLimiter
+	if cfg.RedisURL != "" && cfg.RedisURL != "redis://localhost:6379" {
+		// Redis URL에서 주소 추출 (간단한 파싱)
+		// redis://localhost:6379 -> localhost:6379
+		addr := cfg.RedisURL
+		if len(addr) > 8 && addr[:8] == "redis://" {
+			addr = addr[8:]
+		}
+		
+		redisLimiter = ratelimit.NewRedisRateLimiter(ratelimit.RedisRateLimiterConfig{
+			Addr:         addr,
+			Password:     "",
+			DB:           0,
+			KeyPrefix:    "ratelimit:",
+			DefaultLimit: 60,
+			DefaultTTL:   time.Minute,
+		})
+		
+		// Redis 연결 확인
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		
+		if err := redisLimiter.Ping(ctx); err != nil {
+			logger.Warn("Failed to connect to Redis, falling back to in-memory rate limiting",
+				"error", err,
+				"redis_url", cfg.RedisURL,
+			)
+			redisLimiter.Close()
+			redisLimiter = nil
+		} else {
+			logger.Info("Redis rate limiter initialized", "redis_url", cfg.RedisURL)
+			defer redisLimiter.Close()
+		}
+	} else {
+		logger.Info("Redis URL not configured, using in-memory rate limiting")
+	}
+
+	// 라우터 설정 (DB와 Redis Limiter 전달)
+	router := api.SetupRouter(cfg, db, redisLimiter)
 
 	// 서버 설정
 	srv := &http.Server{

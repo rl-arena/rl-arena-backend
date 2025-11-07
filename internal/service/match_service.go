@@ -167,9 +167,12 @@ func (s *MatchService) processMatchResult(
 		matchResult = 0.0 // agent2 승
 	}
 
-	_, _, agent1ELOChange, agent2ELOChange := s.eloService.CalculateNewRatings(
+	// Use provisional ELO rating system with dynamic K-factors based on match count
+	_, _, agent1ELOChange, agent2ELOChange := s.eloService.CalculateNewRatingsWithMatchCounts(
 		agent1.ELO,
 		agent2.ELO,
+		agent1.TotalMatches,
+		agent2.TotalMatches,
 		matchResult,
 	)
 

@@ -20,6 +20,8 @@
 - **Public/Private Leaderboard**: Separate rankings for real-time and post-competition (Kaggle-style)
 - **Agent Statistics**: Opponent-based win/loss records and performance analytics
 - **API Rate Limiting**: Token Bucket algorithm-based rate limiting for all endpoints
+  - **In-Memory**: Fast, single-instance rate limiting (development)
+  - **Redis**: Distributed rate limiting for multi-instance deployments (production)
 - **Real-time Monitoring**: Kubernetes Watch API + WebSocket notifications
 - **Security Scanning**: Trivy vulnerability scanning for all images
 - **RESTful API**: Well-structured endpoints with comprehensive error handling
@@ -67,6 +69,7 @@ pkg/
 
 - **Go 1.25+**
 - **PostgreSQL 15+**
+- **Redis 7+** (optional, for distributed rate limiting)
 - **Docker & Docker Compose** (for containerized setup)
 
 ### Environment Setup
@@ -182,6 +185,133 @@ Agents are automatically matched after successful builds:
 
 See [docs/AUTO_MATCHMAKING.md](docs/AUTO_MATCHMAKING.md) for details.
 
+##  Distributed Rate Limiting
+
+RL-Arena supports **Redis-based distributed rate limiting** for production multi-instance deployments:
+
+### Features
+
+- **Horizontal Scaling**: Consistent rate limiting across multiple API instances
+- **Token Bucket Algorithm**: Smooth traffic control with automatic refill
+- **Atomic Operations**: Lua scripts prevent race conditions
+- **Fail-Open Strategy**: Maintains service availability if Redis is temporarily down
+- **HTTP Headers**: X-RateLimit-* headers inform clients about limits
+
+### Quick Setup
+
+1. Add Redis configuration to `.env`:
+
+```env
+REDIS_URL=redis://localhost:6379
+```
+
+2. Start Redis with Docker:
+
+```bash
+docker-compose up -d redis
+```
+
+3. The backend automatically uses Redis rate limiting when `REDIS_URL` is configured.
+
+### Rate Limit Presets
+
+| Endpoint | Limit | Window | Key |
+|----------|-------|--------|-----|
+| Authentication | 5 requests | 1 minute | IP address |
+| Code Submission | 5 requests | 1 minute | User ID |
+| Match Creation | 10 requests | 1 minute | User ID |
+| Replay Download | 20 requests | 1 minute | IP/User |
+
+For detailed documentation, see [docs/REDIS_RATE_LIMITER.md](docs/REDIS_RATE_LIMITER.md).
+
+##  Provisional ELO Rating System
+
+RL-Arena implements a **Kaggle-style provisional rating system** to provide more accurate ratings for players at different experience levels:
+
+### Dynamic K-Factors
+
+| Experience Level | Match Count | K-Factor | Purpose |
+|-----------------|-------------|----------|---------|
+| **Provisional** | < 10 matches | **40** | Faster convergence for new players |
+| **Intermediate** | 10-20 matches | **32** | Moderate rating adjustments |
+| **Established** | > 20 matches | **24** | Stable ratings for veterans |
+
+### Benefits
+
+1. **Faster Convergence**: New players reach their true skill level quicker (within 10 matches)
+2. **Better Matchmaking**: More accurate ELO means fairer matches from the start
+3. **Rating Stability**: Veteran players experience less rating volatility
+4. **Fairness**: Similar to competitive chess and Kaggle competitions
+
+### Example
+
+```
+Player A (5 matches, ELO 1200) beats Player B (50 matches, ELO 1200)
+  - Player A: +20 ELO (K=40)
+  - Player B: -12 ELO (K=24)
+
+Player A gains more rating due to provisional status, while Player B's 
+established rating changes less dramatically.
+```
+
+For implementation details, see `internal/service/elo_service.go`.
+
+##  API Documentation
+
+RL-Arena provides **interactive API documentation** powered by Swagger/OpenAPI:
+
+### Access Swagger UI
+
+Once the server is running, visit:
+
+```
+http://localhost:8080/swagger/index.html
+```
+
+### Features
+
+- **Interactive Testing**: Try out API endpoints directly from the browser
+- **Authentication Support**: Test authenticated endpoints with JWT tokens
+- **Schema Validation**: View request/response models and validation rules
+- **Auto-Generated**: Documentation is automatically generated from code annotations
+
+### Example Usage
+
+1. **Start the server**:
+   ```bash
+   go run cmd/server/main.go
+   ```
+
+2. **Open Swagger UI** in your browser:
+   ```
+   http://localhost:8080/swagger/index.html
+   ```
+
+3. **Authenticate** (for protected endpoints):
+   - Click "Authorize" button
+   - Enter: `Bearer <your-jwt-token>`
+   - Click "Authorize"
+
+4. **Test endpoints**:
+   - Expand any endpoint
+   - Click "Try it out"
+   - Fill in parameters
+   - Click "Execute"
+
+### Update Documentation
+
+When you add or modify API endpoints:
+
+```bash
+# Regenerate Swagger docs
+swag init -g cmd/server/main.go -o docs --parseDependency --parseInternal
+
+# Rebuild the server
+go build -o bin/server.exe ./cmd/server
+```
+
+For static documentation, see [API_DOCUMENTATION.md](API_DOCUMENTATION.md).
+
 ##  Database Schema
 
 The application uses PostgreSQL with the following main entities:
@@ -253,6 +383,7 @@ docker run -p 8080:8080 \
 -  [Architecture Overview](docs/ARCHITECTURE.md)
 -  [Setup Guide](docs/SETUP.md)
 -  [Auto-Matchmaking System](docs/AUTO_MATCHMAKING.md)
+-  [Redis Rate Limiter](docs/REDIS_RATE_LIMITER.md)
 -  [API Documentation](API_DOCUMENTATION.md)
 
 ##  License

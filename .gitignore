@@ -104,6 +104,11 @@ tmp/
 # Documentation build
 docs/_build/
 
+# Swagger auto-generated files (regenerate with: swag init)
+docs/docs.go
+docs/swagger.json
+docs/swagger.yaml
+
 # K8s secrets (production)
 k8s/secret.yaml
 k8s/registry-secret.yaml

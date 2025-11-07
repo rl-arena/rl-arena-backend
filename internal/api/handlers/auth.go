@@ -35,12 +35,31 @@ type RegisterRequest struct {
 	FullName string `json:"fullName"`
 }
 
-type AuthResponse struct {
-	Token string `json:"token"`
-	User  gin.H  `json:"user"`
+type UserInfo struct {
+	ID        string  `json:"id"`
+	Username  string  `json:"username"`
+	Email     string  `json:"email"`
+	FullName  string  `json:"fullName"`
+	AvatarURL *string `json:"avatarUrl"`
 }
 
-// Login 로그인
+type AuthResponse struct {
+	Token string   `json:"token"`
+	User  UserInfo `json:"user"`
+}
+
+// Login godoc
+// @Summary User login
+// @Description Authenticate user with email and password
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param request body LoginRequest true "Login credentials"
+// @Success 200 {object} AuthResponse "Successfully authenticated"
+// @Failure 400 {object} map[string]string "Invalid request"
+// @Failure 401 {object} map[string]string "Invalid credentials"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Router /auth/login [post]
 func (h *AuthHandler) Login(c *gin.Context) {
 	var req LoginRequest
 
@@ -81,17 +100,28 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	c.JSON(http.StatusOK, AuthResponse{
 		Token: token,
-		User: gin.H{
-			"id":        user.ID,
-			"username":  user.Username,
-			"email":     user.Email,
-			"fullName":  user.FullName,
-			"avatarUrl": user.AvatarURL,
+		User: UserInfo{
+			ID:        user.ID,
+			Username:  user.Username,
+			Email:     user.Email,
+			FullName:  user.FullName,
+			AvatarURL: user.AvatarURL,
 		},
 	})
 }
 
-// Register 회원가입
+// Register godoc
+// @Summary User registration
+// @Description Create a new user account
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param request body RegisterRequest true "Registration details"
+// @Success 201 {object} AuthResponse "Successfully registered"
+// @Failure 400 {object} map[string]string "Invalid request"
+// @Failure 409 {object} map[string]string "User already exists"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Router /auth/register [post]
 func (h *AuthHandler) Register(c *gin.Context) {
 	var req RegisterRequest
 
@@ -132,12 +162,12 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, AuthResponse{
 		Token: token,
-		User: gin.H{
-			"id":        user.ID,
-			"username":  user.Username,
-			"email":     user.Email,
-			"fullName":  user.FullName,
-			"avatarUrl": user.AvatarURL,
+		User: UserInfo{
+			ID:        user.ID,
+			Username:  user.Username,
+			Email:     user.Email,
+			FullName:  user.FullName,
+			AvatarURL: user.AvatarURL,
 		},
 	})
 }

@@ -4,6 +4,9 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
+
 	"github.com/rl-arena/rl-arena-backend/internal/api/handlers"
 	"github.com/rl-arena/rl-arena-backend/internal/api/middleware"
 	"github.com/rl-arena/rl-arena-backend/internal/config"
@@ -12,11 +15,12 @@ import (
 	"github.com/rl-arena/rl-arena-backend/internal/websocket"
 	"github.com/rl-arena/rl-arena-backend/pkg/database"
 	"github.com/rl-arena/rl-arena-backend/pkg/executor"
+	"github.com/rl-arena/rl-arena-backend/pkg/ratelimit"
 	"github.com/rl-arena/rl-arena-backend/pkg/storage"
 )
 
 // SetupRouter API 라우터 설정
-func SetupRouter(cfg *config.Config, db *database.DB) *gin.Engine {
+func SetupRouter(cfg *config.Config, db *database.DB, redisLimiter *ratelimit.RedisRateLimiter) *gin.Engine {
 	if cfg.Env == "production" {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -73,14 +77,30 @@ func SetupRouter(cfg *config.Config, db *database.DB) *gin.Engine {
 
 	// Matchmaking Service 초기화 및 시작
 	matchmakingRepo := repository.NewMatchmakingRepository(db)
-	matchmakingService := service.NewMatchmakingService(
-		matchmakingRepo,
-		agentRepo,
-		matchService,
-		30*time.Second, // 30초마다 매칭 시도
-	)
+	var matchmakingService *service.MatchmakingService
+	
+	if redisLimiter != nil {
+		// Redis 기반 분산 Matchmaking (프로덕션)
+		matchmakingService = service.NewMatchmakingServiceWithRedis(
+			matchmakingRepo,
+			agentRepo,
+			matchService,
+			30*time.Second, // 30초마다 매칭 트리거
+			redisLimiter.GetClient(), // Rate Limiter의 Redis 클라이언트 재사용
+		)
+		println("MatchmakingService started (Redis distributed mode, 30s interval)")
+	} else {
+		// 단일 고루틴 Matchmaking (개발)
+		matchmakingService = service.NewMatchmakingService(
+			matchmakingRepo,
+			agentRepo,
+			matchService,
+			30*time.Second,
+		)
+		println("MatchmakingService started (single-instance mode, 30s interval)")
+	}
+	
 	matchmakingService.Start()
-	println("MatchmakingService started (30s interval)")
 
 	// BuildMonitor 초기화 및 시작 (K8s 환경에서만)
 	if cfg.UseK8s && builderService != nil {
@@ -107,6 +127,9 @@ func SetupRouter(cfg *config.Config, db *database.DB) *gin.Engine {
 	// Health check
 	router.GET("/health", handlers.HealthCheck)
 
+	// Swagger documentation endpoint
+	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+
 	// 정적 파일 서빙
 	router.Static("/storage", cfg.StoragePath)
 
@@ -118,7 +141,12 @@ func SetupRouter(cfg *config.Config, db *database.DB) *gin.Engine {
 
 		// Auth routes (rate limited by IP)
 		auth := v1.Group("/auth")
-		auth.Use(middleware.AuthRateLimit())
+		// Redis 기반 또는 In-Memory Rate Limiting 선택
+		if redisLimiter != nil {
+			auth.Use(middleware.RedisAuthRateLimit(redisLimiter))
+		} else {
+			auth.Use(middleware.AuthRateLimit())
+		}
 		{
 			auth.POST("/login", authHandler.Login)
 			auth.POST("/register", authHandler.Register)
@@ -140,7 +168,13 @@ func SetupRouter(cfg *config.Config, db *database.DB) *gin.Engine {
 		submissions := v1.Group("/submissions")
 		{
 			// Strict rate limit for submission creation (5 per minute per user)
-			submissions.POST("", middleware.Auth(cfg), middleware.SubmissionRateLimit(), submissionHandler.CreateSubmission)
+			var submissionRateLimit gin.HandlerFunc
+			if redisLimiter != nil {
+				submissionRateLimit = middleware.RedisSubmissionRateLimit(redisLimiter)
+			} else {
+				submissionRateLimit = middleware.SubmissionRateLimit()
+			}
+			submissions.POST("", middleware.Auth(cfg), submissionRateLimit, submissionHandler.CreateSubmission)
 			
 			// General endpoints
 			submissions.GET("/:id", submissionHandler.GetSubmission)
@@ -152,14 +186,20 @@ func SetupRouter(cfg *config.Config, db *database.DB) *gin.Engine {
 			submissions.GET("/:id/build-logs", submissionHandler.GetBuildLogs)
 			
 			// Rebuild endpoint (same rate limit as submission)
-			submissions.POST("/:id/rebuild", middleware.Auth(cfg), middleware.SubmissionRateLimit(), submissionHandler.RebuildSubmission)
+			submissions.POST("/:id/rebuild", middleware.Auth(cfg), submissionRateLimit, submissionHandler.RebuildSubmission)
 		}
 
 		// Match routes (rate limited)
 		matches := v1.Group("/matches")
 		{
 			// Manual match creation (10 per minute per user)
-			matches.POST("", middleware.Auth(cfg), middleware.MatchCreationRateLimit(), matchHandler.CreateMatch)
+			var matchCreationRateLimit gin.HandlerFunc
+			if redisLimiter != nil {
+				matchCreationRateLimit = middleware.RedisMatchCreationRateLimit(redisLimiter)
+			} else {
+				matchCreationRateLimit = middleware.MatchCreationRateLimit()
+			}
+			matches.POST("", middleware.Auth(cfg), matchCreationRateLimit, matchHandler.CreateMatch)
 			
 			// General match endpoints
 			matches.GET("", handlers.ListMatches)
@@ -167,7 +207,13 @@ func SetupRouter(cfg *config.Config, db *database.DB) *gin.Engine {
 			matches.GET("/:id", matchHandler.GetMatch)
 			
 			// Replay endpoints (rate limited to prevent abuse)
-			matches.GET("/:id/replay", middleware.ReplayDownloadRateLimit(), matchHandler.GetMatchReplay)
+			var replayDownloadRateLimit gin.HandlerFunc
+			if redisLimiter != nil {
+				replayDownloadRateLimit = middleware.RedisReplayDownloadRateLimit(redisLimiter)
+			} else {
+				replayDownloadRateLimit = middleware.ReplayDownloadRateLimit()
+			}
+			matches.GET("/:id/replay", replayDownloadRateLimit, matchHandler.GetMatchReplay)
 			matches.GET("/:id/replay-url", matchHandler.GetMatchReplayURL)
 			
 			matches.GET("/agent/:agentId", matchHandler.ListMatchesByAgent)

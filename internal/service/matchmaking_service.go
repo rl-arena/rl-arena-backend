@@ -6,8 +6,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"github.com/rl-arena/rl-arena-backend/internal/models"
 	"github.com/rl-arena/rl-arena-backend/internal/repository"
+	"github.com/rl-arena/rl-arena-backend/pkg/distributed"
 	"go.uber.org/zap"
 )
 
@@ -23,6 +25,10 @@ type MatchmakingService struct {
 	wg              sync.WaitGroup
 	running         bool
 	mu              sync.Mutex
+	
+	// Redis 분산 처리
+	coordinator     *distributed.MatchmakingCoordinator
+	useDistributed  bool
 }
 
 func NewMatchmakingService(
@@ -42,6 +48,33 @@ func NewMatchmakingService(
 		eloRange:        100,
 		maxEloRange:     500,
 		stopChan:        make(chan struct{}),
+		useDistributed:  false, // 기본값은 단일 고루틴 모드
+	}
+}
+
+// NewMatchmakingServiceWithRedis Redis 분산 처리를 사용하는 Matchmaking Service 생성
+func NewMatchmakingServiceWithRedis(
+	matchmakingRepo *repository.MatchmakingRepository,
+	agentRepo *repository.AgentRepository,
+	matchService *MatchService,
+	interval time.Duration,
+	redisClient *redis.Client,
+) *MatchmakingService {
+	logger, _ := zap.NewProduction()
+	
+	coordinator := distributed.NewMatchmakingCoordinator(redisClient, logger)
+	
+	return &MatchmakingService{
+		matchmakingRepo: matchmakingRepo,
+		agentRepo:       agentRepo,
+		matchService:    matchService,
+		logger:          logger,
+		interval:        interval,
+		eloRange:        100,
+		maxEloRange:     500,
+		stopChan:        make(chan struct{}),
+		coordinator:     coordinator,
+		useDistributed:  true, // 분산 모드 활성화
 	}
 }
 
@@ -55,10 +88,22 @@ func (s *MatchmakingService) Start() {
 	s.running = true
 	s.mu.Unlock()
 
-	s.logger.Info("Starting MatchmakingService", zap.Duration("interval", s.interval))
-
-	s.wg.Add(1)
-	go s.matchmakingLoop()
+	if s.useDistributed {
+		s.logger.Info("Starting MatchmakingService with Redis Pub/Sub",
+			zap.Duration("interval", s.interval))
+		
+		// Redis Pub/Sub 기반 분산 처리
+		s.wg.Add(2)
+		go s.distributedMatchmakingLoop()
+		go s.periodicMatchingTrigger()
+	} else {
+		s.logger.Info("Starting MatchmakingService (single-instance mode)",
+			zap.Duration("interval", s.interval))
+		
+		// 기존 단일 고루틴 모드
+		s.wg.Add(1)
+		go s.matchmakingLoop()
+	}
 }
 
 // Stop 매칭 시스템 중지
@@ -72,12 +117,17 @@ func (s *MatchmakingService) Stop() {
 	s.mu.Unlock()
 
 	s.logger.Info("Stopping MatchmakingService")
+	
+	if s.useDistributed && s.coordinator != nil {
+		s.coordinator.Stop()
+	}
+	
 	close(s.stopChan)
 	s.wg.Wait()
 	s.logger.Info("MatchmakingService stopped")
 }
 
-// matchmakingLoop 주기적 매칭 실행
+// matchmakingLoop 주기적 매칭 실행 (단일 인스턴스 모드)
 func (s *MatchmakingService) matchmakingLoop() {
 	defer s.wg.Done()
 
@@ -93,6 +143,72 @@ func (s *MatchmakingService) matchmakingLoop() {
 			s.runMatchmaking()
 		case <-s.stopChan:
 			return
+		}
+	}
+}
+
+// distributedMatchmakingLoop Redis Pub/Sub 기반 분산 매칭 루프
+func (s *MatchmakingService) distributedMatchmakingLoop() {
+	defer s.wg.Done()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// 매칭 이벤트 핸들러
+	handler := func(event distributed.MatchmakingEvent) error {
+		switch event.Type {
+		case "agent_enqueued", "matching_requested":
+			// 해당 환경에서 매칭 시도
+			s.matchEnvironment(ctx, event.EnvironmentID)
+		default:
+			s.logger.Warn("Unknown event type", zap.String("type", event.Type))
+		}
+		return nil
+	}
+
+	// Redis Pub/Sub 수신 시작
+	if err := s.coordinator.Start(ctx, handler); err != nil {
+		s.logger.Error("Coordinator stopped with error", zap.Error(err))
+	}
+}
+
+// periodicMatchingTrigger 주기적으로 매칭 이벤트 발행
+func (s *MatchmakingService) periodicMatchingTrigger() {
+	defer s.wg.Done()
+
+	ticker := time.NewTicker(s.interval)
+	defer ticker.Stop()
+
+	ctx := context.Background()
+
+	// 시작 시 한번 실행
+	s.triggerMatching(ctx)
+
+	for {
+		select {
+		case <-ticker.C:
+			s.triggerMatching(ctx)
+		case <-s.stopChan:
+			return
+		}
+	}
+}
+
+// triggerMatching 모든 환경에 대해 매칭 이벤트 발행
+func (s *MatchmakingService) triggerMatching(ctx context.Context) {
+	// 만료된 큐 정리
+	if err := s.matchmakingRepo.CleanupExpired(24 * time.Hour); err != nil {
+		s.logger.Error("Failed to cleanup expired queue", zap.Error(err))
+	}
+
+	// 각 환경별로 매칭 요청 이벤트 발행
+	environments := []string{"pong"} // TODO: DB에서 활성 환경 목록 가져오기
+	
+	for _, env := range environments {
+		if err := s.coordinator.NotifyMatchingRequested(ctx, env); err != nil {
+			s.logger.Error("Failed to notify matching requested",
+				zap.String("environment", env),
+				zap.Error(err))
 		}
 	}
 }
@@ -245,12 +361,30 @@ func (s *MatchmakingService) EnqueueAgent(agentID, environmentID string) error {
 		return fmt.Errorf("failed to find agent: %w", err)
 	}
 
-	return s.matchmakingRepo.EnqueueAgent(
+	if err := s.matchmakingRepo.EnqueueAgent(
 		agentID,
 		environmentID,
 		agent.ELO,
 		5,
-	)
+	); err != nil {
+		return err
+	}
+
+	// Redis 분산 모드인 경우 이벤트 발행
+	if s.useDistributed && s.coordinator != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		
+		if err := s.coordinator.NotifyAgentEnqueued(ctx, environmentID, agentID); err != nil {
+			s.logger.Error("Failed to notify agent enqueued",
+				zap.String("agent", agentID),
+				zap.String("environment", environmentID),
+				zap.Error(err))
+			// 이벤트 발행 실패해도 큐 추가는 성공으로 처리
+		}
+	}
+
+	return nil
 }
 
 func abs(x int) int {

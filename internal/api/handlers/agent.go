@@ -21,7 +21,17 @@ func NewAgentHandler(agentService *service.AgentService) *AgentHandler {
 	}
 }
 
-// ListAgents 모든 에이전트 목록 조회
+// ListAgents godoc
+// @Summary List all agents
+// @Description Get paginated list of all AI agents
+// @Tags agents
+// @Accept json
+// @Produce json
+// @Param page query int false "Page number" default(1)
+// @Param pageSize query int false "Page size" default(20)
+// @Success 200 {object} map[string]interface{} "List of agents with pagination"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Router /agents [get]
 func (h *AgentHandler) ListAgents(c *gin.Context) {
 	// 페이지네이션 파라미터
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
@@ -43,7 +53,17 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 	})
 }
 
-// GetAgent 특정 에이전트 조회
+// GetAgent godoc
+// @Summary Get agent by ID
+// @Description Get detailed information about a specific agent
+// @Tags agents
+// @Accept json
+// @Produce json
+// @Param id path string true "Agent ID"
+// @Success 200 {object} map[string]interface{} "Agent details"
+// @Failure 404 {object} map[string]string "Agent not found"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Router /agents/{id} [get]
 func (h *AgentHandler) GetAgent(c *gin.Context) {
 	id := c.Param("id")
 
@@ -67,7 +87,19 @@ func (h *AgentHandler) GetAgent(c *gin.Context) {
 	})
 }
 
-// CreateAgent 새 에이전트 생성
+// CreateAgent godoc
+// @Summary Create a new agent
+// @Description Create a new AI agent for the authenticated user
+// @Tags agents
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body models.CreateAgentRequest true "Agent creation details"
+// @Success 201 {object} map[string]interface{} "Created agent"
+// @Failure 400 {object} map[string]string "Invalid request"
+// @Failure 401 {object} map[string]string "Unauthorized"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Router /agents [post]
 func (h *AgentHandler) CreateAgent(c *gin.Context) {
 	var req models.CreateAgentRequest
 
