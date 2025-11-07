@@ -5,11 +5,13 @@ import "time"
 type SubmissionStatus string
 
 const (
-	SubmissionStatusPending  SubmissionStatus = "pending"
-	SubmissionStatusBuilding SubmissionStatus = "building"
-	SubmissionStatusActive   SubmissionStatus = "active"
-	SubmissionStatusFailed   SubmissionStatus = "failed"
-	SubmissionStatusInactive SubmissionStatus = "inactive"
+	SubmissionStatusPending     SubmissionStatus = "pending"
+	SubmissionStatusBuilding    SubmissionStatus = "building"
+	SubmissionStatusSuccess     SubmissionStatus = "success"
+	SubmissionStatusBuildFailed SubmissionStatus = "build_failed"
+	SubmissionStatusActive      SubmissionStatus = "active"
+	SubmissionStatusFailed      SubmissionStatus = "failed"
+	SubmissionStatusInactive    SubmissionStatus = "inactive"
 )
 
 type Submission struct {

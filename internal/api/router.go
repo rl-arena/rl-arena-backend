@@ -1,6 +1,8 @@
 package api
 
 import (
+	"time"
+
 	"github.com/gin-gonic/gin"
 	"github.com/rl-arena/rl-arena-backend/internal/api/handlers"
 	"github.com/rl-arena/rl-arena-backend/internal/api/middleware"
@@ -57,6 +59,11 @@ func SetupRouter(cfg *config.Config, db *database.DB) *gin.Engine {
 		if err != nil {
 			// K8s 환경이 아니거나 설정 오류 시 경고만 출력하고 계속 진행
 			println("Warning: Failed to initialize BuilderService:", err.Error())
+		} else {
+			// BuildMonitor 초기화 및 시작
+			buildMonitor := service.NewBuildMonitor(builderService, submissionRepo, 10*time.Second)
+			buildMonitor.Start()
+			println("BuildMonitor started successfully")
 		}
 	}
 
@@ -105,6 +112,10 @@ func SetupRouter(cfg *config.Config, db *database.DB) *gin.Engine {
 			submissions.GET("/:id", submissionHandler.GetSubmission)
 			submissions.GET("/agent/:agentId", submissionHandler.ListSubmissionsByAgent)
 			submissions.PUT("/:id/activate", middleware.Auth(cfg), submissionHandler.SetActiveSubmission)
+			
+			// 빌드 관련 엔드포인트
+			submissions.GET("/:id/build-status", submissionHandler.GetBuildStatus)
+			submissions.GET("/:id/build-logs", submissionHandler.GetBuildLogs)
 		}
 
 		// Match routes

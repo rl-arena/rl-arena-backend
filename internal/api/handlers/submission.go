@@ -127,6 +127,75 @@ func (h *SubmissionHandler) SetActiveSubmission(c *gin.Context) {
 	})
 }
 
+// GetBuildStatus 빌드 상태 조회
+func (h *SubmissionHandler) GetBuildStatus(c *gin.Context) {
+	id := c.Param("id")
+
+	submission, err := h.submissionService.GetByID(id)
+	if err != nil {
+		if errors.Is(err, service.ErrSubmissionNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Submission not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get submission"})
+		return
+	}
+
+	response := gin.H{
+		"submissionId": submission.ID,
+		"status":       submission.Status,
+		"createdAt":    submission.CreatedAt,
+		"updatedAt":    submission.UpdatedAt,
+	}
+
+	// 빌드 관련 정보 추가
+	if submission.BuildJobName != nil {
+		response["buildJobName"] = *submission.BuildJobName
+	}
+	if submission.BuildPodName != nil {
+		response["buildPodName"] = *submission.BuildPodName
+	}
+	if submission.DockerImageURL != nil {
+		response["dockerImageUrl"] = *submission.DockerImageURL
+	}
+	if submission.ErrorMessage != nil {
+		response["errorMessage"] = *submission.ErrorMessage
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+// GetBuildLogs 빌드 로그 조회
+func (h *SubmissionHandler) GetBuildLogs(c *gin.Context) {
+	id := c.Param("id")
+
+	submission, err := h.submissionService.GetByID(id)
+	if err != nil {
+		if errors.Is(err, service.ErrSubmissionNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Submission not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get submission"})
+		return
+	}
+
+	// 빌드 로그가 없으면 404
+	if submission.BuildLog == nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error":   "Build logs not available",
+			"message": "Logs may not be available yet or build has not started",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"submissionId": submission.ID,
+		"status":       submission.Status,
+		"buildLog":     *submission.BuildLog,
+		"updatedAt":    submission.UpdatedAt,
+	})
+}
+
 // handleError 에러 처리 헬퍼
 func (h *SubmissionHandler) handleError(c *gin.Context, err error) {
 	if errors.Is(err, service.ErrAgentNotFound) {
