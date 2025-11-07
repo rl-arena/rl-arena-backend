@@ -22,8 +22,9 @@ data:
   K8S_NAMESPACE: "rl-arena"
   USE_K8S: "true"
   
-  # Container Registry (변경 필요)
-  CONTAINER_REGISTRY: "docker.io/your-registry"
+  # Container Registry Configuration
+  CONTAINER_REGISTRY_URL: "docker.io/your-registry"
+  CONTAINER_REGISTRY_SECRET: "registry-credentials"
   
   # Logging
   LOG_LEVEL: "info"

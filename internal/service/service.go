@@ -18,17 +18,20 @@ type SubmissionService struct {
 	submissionRepo *repository.SubmissionRepository
 	agentRepo      *repository.AgentRepository
 	storage        *storage.Storage
+	builderService *BuilderService
 }
 
 func NewSubmissionService(
 	submissionRepo *repository.SubmissionRepository,
 	agentRepo *repository.AgentRepository,
 	storage *storage.Storage,
+	builderService *BuilderService,
 ) *SubmissionService {
 	return &SubmissionService{
 		submissionRepo: submissionRepo,
 		agentRepo:      agentRepo,
 		storage:        storage,
+		builderService: builderService,
 	}
 }
 
@@ -93,6 +96,17 @@ func (s *SubmissionService) CreateFromURL(agentID, userID, codeURL string) (*mod
 	if err != nil {
 		return nil, fmt.Errorf("failed to create submission: %w", err)
 	}
+
+	// TODO: Docker 이미지 빌드 (Kaniko)
+	// BuilderService를 통해 비동기 빌드 시작
+	// if s.builderService != nil {
+	//     go func() {
+	//         ctx := context.Background()
+	//         if err := s.builderService.BuildAgentImage(ctx, submission); err != nil {
+	//             // 빌드 실패 처리 (로그, 상태 업데이트 등)
+	//         }
+	//     }()
+	// }
 
 	return submission, nil
 }

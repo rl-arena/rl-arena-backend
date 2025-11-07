@@ -33,6 +33,12 @@ type Config struct {
 	// Executor Service
 	ExecutorURL string
 
+	// K8s Configuration
+	K8sNamespace             string
+	UseK8s                   bool
+	ContainerRegistryURL     string
+	ContainerRegistrySecret  string
+
 	// Storage
 	StoragePath string // 파일 저장 경로
 }
@@ -42,18 +48,22 @@ func Load() (*Config, error) {
 	_ = godotenv.Load()
 
 	cfg := &Config{
-		Port:                getEnv("PORT", "8080"),
-		Env:                 getEnv("ENV", "development"),
-		LogLevel:            getEnv("LOG_LEVEL", "info"),
-		DatabaseURL:         getEnv("DATABASE_URL", ""),
-		RedisURL:            getEnv("REDIS_URL", "redis://localhost:6379"),
-		JWTSecret:           getEnv("JWT_SECRET", "your-secret-key"),
-		JWTExpiration:       parseDuration(getEnv("JWT_EXPIRATION", "24h")),
-		MatchmakingInterval: parseDuration(getEnv("MATCHMAKING_INTERVAL", "10s")),
-		MaxELODifference:    200,
-		ExecutorURL:         getEnv("EXECUTOR_URL", "http://localhost:8081"),
-		StoragePath:         getEnv("STORAGE_PATH", "./storage"),
-		CORSAllowedOrigins:  []string{"http://localhost:3000", "http://localhost:5173"},
+		Port:                     getEnv("PORT", "8080"),
+		Env:                      getEnv("ENV", "development"),
+		LogLevel:                 getEnv("LOG_LEVEL", "info"),
+		DatabaseURL:              getEnv("DATABASE_URL", ""),
+		RedisURL:                 getEnv("REDIS_URL", "redis://localhost:6379"),
+		JWTSecret:                getEnv("JWT_SECRET", "your-secret-key"),
+		JWTExpiration:            parseDuration(getEnv("JWT_EXPIRATION", "24h")),
+		MatchmakingInterval:      parseDuration(getEnv("MATCHMAKING_INTERVAL", "10s")),
+		MaxELODifference:         200,
+		ExecutorURL:              getEnv("EXECUTOR_URL", "http://localhost:8081"),
+		StoragePath:              getEnv("STORAGE_PATH", "./storage"),
+		CORSAllowedOrigins:       []string{"http://localhost:3000", "http://localhost:5173"},
+		K8sNamespace:             getEnv("K8S_NAMESPACE", "rl-arena"),
+		UseK8s:                   getEnv("USE_K8S", "false") == "true",
+		ContainerRegistryURL:     getEnv("CONTAINER_REGISTRY_URL", "docker.io/rl-arena"),
+		ContainerRegistrySecret:  getEnv("CONTAINER_REGISTRY_SECRET", "registry-credentials"),
 	}
 
 	return cfg, nil

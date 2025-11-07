@@ -28,8 +28,11 @@ func SetupRouter(cfg *config.Config, db *database.DB) *gin.Engine {
 	// Storage 초기화
 	storageManager := storage.NewStorage(cfg.StoragePath)
 
-	// Executor 클라이언트 초기화
-	executorClient := executor.NewClient(cfg.ExecutorURL)
+	// Executor 클라이언트 초기화 (gRPC)
+	executorClient, err := executor.NewClient(cfg.ExecutorURL)
+	if err != nil {
+		panic("Failed to connect to executor: " + err.Error())
+	}
 
 	// Repository 초기화
 	userRepo := repository.NewUserRepository(db)
@@ -41,7 +44,23 @@ func SetupRouter(cfg *config.Config, db *database.DB) *gin.Engine {
 	eloService := service.NewELOService()
 	userService := service.NewUserService(userRepo)
 	agentService := service.NewAgentService(agentRepo)
-	submissionService := service.NewSubmissionService(submissionRepo, agentRepo, storageManager)
+
+	// Builder Service 초기화 (K8s 환경에서만)
+	var builderService *service.BuilderService
+	if cfg.UseK8s {
+		builderService, err = service.NewBuilderService(
+			submissionRepo,
+			cfg.K8sNamespace,
+			cfg.ContainerRegistryURL,
+			cfg.ContainerRegistrySecret,
+		)
+		if err != nil {
+			// K8s 환경이 아니거나 설정 오류 시 경고만 출력하고 계속 진행
+			println("Warning: Failed to initialize BuilderService:", err.Error())
+		}
+	}
+
+	submissionService := service.NewSubmissionService(submissionRepo, agentRepo, storageManager, builderService)
 	matchService := service.NewMatchService(matchRepo, agentRepo, submissionRepo, eloService, executorClient)
 
 	// Handler 초기화
