@@ -331,3 +331,22 @@ func (r *SubmissionRepository) UpdateRetryInfo(id string, retryCount int, lastRe
 
 	return nil
 }
+
+// CountTodaySubmissions 오늘 제출한 submission 개수 조회 (일일 쿼터 체크용)
+func (r *SubmissionRepository) CountTodaySubmissions(agentID string) (int, error) {
+	query := `
+		SELECT COUNT(*)
+		FROM submissions
+		WHERE agent_id = $1
+			AND created_at >= CURRENT_DATE
+			AND created_at < CURRENT_DATE + INTERVAL '1 day'
+	`
+
+	var count int
+	err := r.db.QueryRow(query, agentID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count today submissions: %w", err)
+	}
+
+	return count, nil
+}

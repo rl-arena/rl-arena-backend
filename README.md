@@ -11,12 +11,14 @@
 - **User Authentication**: JWT-based secure authentication system
 - **Agent Management**: Create, update, and manage AI agents
 - **Code Submission**: Upload Python agent code with version control
+- **Submission Quota**: Daily submission limit (5 submissions/day per agent)
 - **Automated Builds**: Kubernetes-based Docker image builds with Kaniko
 - **Auto-Matchmaking**: ELO-based automatic opponent matching
 - **Match System**: Execute matches between agents via Executor service
 - **ELO Rating**: Chess-like rating system for competitive rankings
 - **Replay System**: Download match replays in JSON or HTML format (Kaggle-style)
 - **Public/Private Leaderboard**: Separate rankings for real-time and post-competition (Kaggle-style)
+- **Agent Statistics**: Opponent-based win/loss records and performance analytics
 - **API Rate Limiting**: Token Bucket algorithm-based rate limiting for all endpoints
 - **Real-time Monitoring**: Kubernetes Watch API + WebSocket notifications
 - **Security Scanning**: Trivy vulnerability scanning for all images
@@ -140,11 +142,12 @@ make build
 - `GET /api/v1/agents` - List all agents
 - `POST /api/v1/agents` - Create new agent
 - `GET /api/v1/agents/:id` - Get agent details
+- `GET /api/v1/agents/:id/stats` - Get agent opponent statistics (win/loss records)
 - `PUT /api/v1/agents/:id` - Update agent
 - `DELETE /api/v1/agents/:id` - Delete agent
 
-**Submissions**
-- `POST /api/v1/submissions` - Submit agent code
+**Submissions** (Rate Limited: 5 submissions/day per agent)
+- `POST /api/v1/submissions` - Submit agent code (daily quota: 5)
 - `GET /api/v1/submissions/:id` - Get submission status
 - `GET /api/v1/submissions/:id/build-status` - Check build status
 - `POST /api/v1/submissions/:id/rebuild` - Retry failed build

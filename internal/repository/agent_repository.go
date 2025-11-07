@@ -371,3 +371,62 @@ func (r *AgentRepository) Count() (int, error) {
 
 	return count, nil
 }
+
+// OpponentStats 상대별 전적 통계
+type OpponentStats struct {
+	OpponentID   string `json:"opponentId" db:"opponent_id"`
+	OpponentName string `json:"opponentName" db:"opponent_name"`
+	Wins         int    `json:"wins" db:"wins"`
+	Losses       int    `json:"losses" db:"losses"`
+	Draws        int    `json:"draws" db:"draws"`
+	TotalMatches int    `json:"totalMatches" db:"total_matches"`
+}
+
+// GetOpponentStats 특정 에이전트의 상대별 전적 통계
+func (r *AgentRepository) GetOpponentStats(agentID string) ([]*OpponentStats, error) {
+	query := `
+		SELECT 
+			opponent.id as opponent_id,
+			opponent.name as opponent_name,
+			COUNT(*) FILTER (WHERE m.winner_id = $1) as wins,
+			COUNT(*) FILTER (WHERE m.winner_id = opponent.id) as losses,
+			COUNT(*) FILTER (WHERE m.winner_id IS NULL) as draws,
+			COUNT(*) as total_matches
+		FROM matches m
+		INNER JOIN agents opponent ON (
+			CASE 
+				WHEN m.agent1_id = $1 THEN m.agent2_id = opponent.id
+				WHEN m.agent2_id = $1 THEN m.agent1_id = opponent.id
+			END
+		)
+		WHERE (m.agent1_id = $1 OR m.agent2_id = $1)
+			AND m.status = 'completed'
+		GROUP BY opponent.id, opponent.name
+		ORDER BY total_matches DESC, wins DESC
+	`
+
+	rows, err := r.db.Query(query, agentID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query opponent stats: %w", err)
+	}
+	defer rows.Close()
+
+	var stats []*OpponentStats
+	for rows.Next() {
+		stat := &OpponentStats{}
+		err := rows.Scan(
+			&stat.OpponentID,
+			&stat.OpponentName,
+			&stat.Wins,
+			&stat.Losses,
+			&stat.Draws,
+			&stat.TotalMatches,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan opponent stats: %w", err)
+		}
+		stats = append(stats, stat)
+	}
+
+	return stats, nil
+}

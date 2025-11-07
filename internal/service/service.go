@@ -59,6 +59,15 @@ func (s *SubmissionService) Create(agentID, userID string, file *multipart.FileH
 		return nil, ErrUnauthorized
 	}
 
+	// 일일 제출 쿼터 체크 (5회/일)
+	todayCount, err := s.submissionRepo.CountTodaySubmissions(agentID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check daily quota: %w", err)
+	}
+	if todayCount >= 5 {
+		return nil, ErrDailyQuotaExceeded
+	}
+
 	// 파일 저장
 	filePath, err := s.storage.SaveFile(file)
 	if err != nil {
@@ -99,6 +108,15 @@ func (s *SubmissionService) CreateFromURL(agentID, userID, codeURL string) (*mod
 	}
 	if agent.UserID != userID {
 		return nil, ErrUnauthorized
+	}
+
+	// 일일 제출 쿼터 체크 (5회/일)
+	todayCount, err := s.submissionRepo.CountTodaySubmissions(agentID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check daily quota: %w", err)
+	}
+	if todayCount >= 5 {
+		return nil, ErrDailyQuotaExceeded
 	}
 
 	// Submission 생성

@@ -200,4 +200,24 @@ func (s *AgentService) Delete(id, userID string) error {
 	return nil
 }
 
+// GetOpponentStats 에이전트의 상대별 전적 통계 조회
+func (s *AgentService) GetOpponentStats(agentID string) ([]*repository.OpponentStats, error) {
+	// 에이전트 존재 확인
+	agent, err := s.agentRepo.FindByID(agentID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find agent: %w", err)
+	}
+	if agent == nil {
+		return nil, ErrAgentNotFound
+	}
+
+	// 상대별 전적 조회
+	stats, err := s.agentRepo.GetOpponentStats(agentID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get opponent stats: %w", err)
+	}
+
+	return stats, nil
+}
+
 //

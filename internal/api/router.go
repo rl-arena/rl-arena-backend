@@ -130,6 +130,7 @@ func SetupRouter(cfg *config.Config, db *database.DB) *gin.Engine {
 			agents.GET("", agentHandler.ListAgents)
 			agents.GET("/my", middleware.Auth(cfg), agentHandler.GetMyAgents)
 			agents.GET("/:id", agentHandler.GetAgent)
+			agents.GET("/:id/stats", agentHandler.GetAgentStats) // 상대별 전적 통계
 			agents.POST("", middleware.Auth(cfg), agentHandler.CreateAgent)
 			agents.PUT("/:id", middleware.Auth(cfg), agentHandler.UpdateAgent)
 			agents.DELETE("/:id", middleware.Auth(cfg), agentHandler.DeleteAgent)

@@ -236,6 +236,11 @@ func (h *SubmissionHandler) handleError(c *gin.Context, err error) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Unauthorized"})
 	} else if errors.Is(err, service.ErrInvalidFile) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid file"})
+	} else if errors.Is(err, service.ErrDailyQuotaExceeded) {
+		c.JSON(http.StatusTooManyRequests, gin.H{
+			"error":   "Daily submission quota exceeded",
+			"message": "You can only submit 5 times per day. Please try again tomorrow.",
+		})
 	} else {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
 	}

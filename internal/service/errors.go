@@ -29,6 +29,7 @@ var (
 
 // Submission service specific errors
 var (
-	ErrSubmissionNotFound = errors.New("submission not found")
-	ErrInvalidFile        = errors.New("invalid file")
+	ErrSubmissionNotFound   = errors.New("submission not found")
+	ErrInvalidFile          = errors.New("invalid file")
+	ErrDailyQuotaExceeded   = errors.New("daily submission quota exceeded")
 )

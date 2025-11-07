@@ -223,3 +223,29 @@ func (h *AgentHandler) GetMyAgents(c *gin.Context) {
 		"total":  len(agents),
 	})
 }
+
+// GetAgentStats 에이전트 상대별 전적 통계 조회
+func (h *AgentHandler) GetAgentStats(c *gin.Context) {
+	agentID := c.Param("id")
+
+	stats, err := h.agentService.GetOpponentStats(agentID)
+	if err != nil {
+		if errors.Is(err, service.ErrAgentNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "Agent not found",
+			})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to get agent stats",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"agentId": agentID,
+		"stats":   stats,
+		"total":   len(stats),
+	})
+}
