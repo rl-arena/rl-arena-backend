@@ -1,221 +1,439 @@
-# RL-Arena Backend
+# RL Arena Backend# RL-Arena Backend
 
-[![Go Version](https://img.shields.io/badge/Go-1.25-00ADD8?style=flat&logo=go)](https://go.dev/)
+
+
+A reinforcement learning agent competition platform with automatic matchmaking, real-time monitoring, and Kubernetes-based Docker builds.[![Go Version](https://img.shields.io/badge/Go-1.25-00ADD8?style=flat&logo=go)](https://go.dev/)
+
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-yellow.svg)](https://opensource.org/licenses/Apache-2.0)
 
-**RL-Arena Backend** is the core REST API server for the RL-Arena platform - a competitive reinforcement learning environment where AI agents battle against each other with ELO-based rankings.
+[![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat&logo=go)](https://golang.org)
+
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-336791?style=flat&logo=postgresql)](https://www.postgresql.org)**RL-Arena Backend** is the core REST API server for the RL-Arena platform - a competitive reinforcement learning environment where AI agents battle against each other with ELO-based rankings.
+
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 ## 🎯 Features
 
+## Features
+
 - **User Authentication**: JWT-based secure authentication system
-- **Agent Management**: Create, update, and manage AI agents
-- **Code Submission**: Upload Python agent code with version control
-- **Match System**: Execute matches between agents via Executor service
-- **ELO Rating**: Chess-like rating system for competitive rankings
-- **Leaderboard**: Real-time rankings by ELO and environment
-- **RESTful API**: Well-structured endpoints with comprehensive error handling
 
-## 🏗️ Architecture
+- ✅ **Agent Management**: Create and manage RL agents- **Agent Management**: Create, update, and manage AI agents
 
-The backend follows a clean architecture pattern with clear separation of concerns:
+- ✅ **Automated Builds**: Kubernetes-based Docker image builds with Kaniko- **Code Submission**: Upload Python agent code with version control
 
-```
+- ✅ **Real-time Monitoring**: Kubernetes Watch API + WebSocket notifications- **Match System**: Execute matches between agents via Executor service
+
+- ✅ **Auto-Matchmaking**: ELO-based automatic match creation- **ELO Rating**: Chess-like rating system for competitive rankings
+
+- ✅ **Match Execution**: gRPC communication with executor service- **Leaderboard**: Real-time rankings by ELO and environment
+
+- ✅ **ELO Rating System**: Competitive ranking with automatic updates- **RESTful API**: Well-structured endpoints with comprehensive error handling
+
+- ✅ **Security Scanning**: Trivy vulnerability scanning for all images
+
+- ✅ **Build Caching**: 24-hour cache for faster rebuilds## 🏗️ Architecture
+
+- ✅ **Priority Queue**: Configurable build priorities
+
+- ✅ **Retry Mechanism**: Automatic build retry on failureThe backend follows a clean architecture pattern with clear separation of concerns:
+
+
+
+## Quick Start```
+
 cmd/
-├── server/          # Application entry point
+
+### Prerequisites├── server/          # Application entry point
+
 internal/
-├── api/
-│   ├── handlers/    # HTTP request handlers
-│   ├── middleware/  # Authentication, CORS, logging
+
+- Go 1.25+├── api/
+
+- PostgreSQL 15+│   ├── handlers/    # HTTP request handlers
+
+- Kubernetes cluster (optional for local dev)│   ├── middleware/  # Authentication, CORS, logging
+
 │   └── router.go    # Route definitions
-├── config/          # Configuration management
+
+### Installation├── config/          # Configuration management
+
 ├── models/          # Data models and structs
-├── repository/      # Data access layer (PostgreSQL)
-├── service/         # Business logic layer
-└── queue/           # Background job processing
-pkg/
+
+```bash├── repository/      # Data access layer (PostgreSQL)
+
+# Clone repository├── service/         # Business logic layer
+
+git clone https://github.com/rl-arena/rl-arena-backend.git└── queue/           # Background job processing
+
+cd rl-arena-backendpkg/
+
 ├── database/        # Database connection and utilities
-├── executor/        # External executor service client
-├── jwt/             # JWT token management
+
+# Install dependencies├── executor/        # External executor service client
+
+go mod download├── jwt/             # JWT token management
+
 ├── logger/          # Structured logging (Zap)
-├── storage/         # File storage management
-├── utils/           # Common utilities
-└── validator/       # Request validation
+
+# Setup database├── storage/         # File storage management
+
+createdb rl_arena├── utils/           # Common utilities
+
+cat migrations/*.sql | psql -U postgres -d rl_arena└── validator/       # Request validation
+
 ```
 
-### Key Components
+# Configure environment
+
+cp .env.example .env### Key Components
+
+# Edit .env with your settings
 
 - **REST API**: Built with Gin framework for high performance
-- **Authentication**: JWT-based stateless authentication
-- **Database**: PostgreSQL with proper migrations
-- **ELO System**: Chess-like rating system for competitive rankings
+
+# Run server- **Authentication**: JWT-based stateless authentication
+
+go run cmd/server/main.go- **Database**: PostgreSQL with proper migrations
+
+```- **ELO System**: Chess-like rating system for competitive rankings
+
 - **Executor Integration**: External service for running agent matches
-- **File Storage**: Secure code submission and replay storage
 
-## 🚀 Quick Start
+Server starts on `http://localhost:8080`- **File Storage**: Secure code submission and replay storage
 
-### Prerequisites
 
-- **Go 1.25+**
-- **PostgreSQL 12+**
+
+## Documentation## 🚀 Quick Start
+
+
+
+- 📖 [Architecture Overview](docs/ARCHITECTURE.md)### Prerequisites
+
+- 🚀 [Setup Guide](docs/SETUP.md)
+
+- 🤖 [Auto-Matchmaking System](docs/AUTO_MATCHMAKING.md)- **Go 1.25+**
+
+- 📡 [API Documentation](API_DOCUMENTATION.md)- **PostgreSQL 12+**
+
 - **Docker & Docker Compose** (for containerized setup)
+
+## Architecture
 
 ### Environment Setup
 
-1. Clone the repository:
-```bash
-git clone https://github.com/rl-arena/rl-arena-backend.git
-cd rl-arena-backend
 ```
 
-2. Copy environment configuration:
-```bash
-cp .env.example .env
-```
+┌─────────────┐1. Clone the repository:
 
-3. Configure your `.env` file:
-```env
-# Server Configuration
-PORT=8080
+│   Frontend  │```bash
+
+└──────┬──────┘git clone https://github.com/rl-arena/rl-arena-backend.git
+
+       │ REST + WebSocketcd rl-arena-backend
+
+┌──────▼──────────────────────┐```
+
+│   Backend (Go + Gin)        │
+
+│   - API Handlers            │2. Copy environment configuration:
+
+│   - Auto-Matchmaking        │```bash
+
+│   - Build Monitor           │cp .env.example .env
+
+│   - WebSocket Hub           │```
+
+└──────┬──────────────────────┘
+
+       │3. Configure your `.env` file:
+
+┌──────▼──────────────────────┐```env
+
+│   PostgreSQL Database       │# Server Configuration
+
+└─────────────────────────────┘PORT=8080
+
 ENV=development
 
-# Database Configuration
-DB_HOST=localhost
-DB_PORT=5432
-DB_USER=postgres
+┌─────────────────────────────┐
+
+│   Kubernetes Cluster        │# Database Configuration
+
+│   - Kaniko Build Jobs       │DB_HOST=localhost
+
+│   - Security Scanning       │DB_PORT=5432
+
+└─────────────────────────────┘DB_USER=postgres
+
 DB_PASSWORD=your_password
-DB_NAME=rl_arena
-DB_SSL_MODE=disable
 
-# JWT Configuration
-JWT_SECRET=your-super-secret-jwt-key
-JWT_EXPIRY=24h
+┌─────────────────────────────┐DB_NAME=rl_arena
 
-# CORS Configuration
+│   Executor (Python gRPC)    │DB_SSL_MODE=disable
+
+│   - Match Simulation        │
+
+│   - Result Reporting        │# JWT Configuration
+
+└─────────────────────────────┘JWT_SECRET=your-super-secret-jwt-key
+
+```JWT_EXPIRY=24h
+
+
+
+## Tech Stack# CORS Configuration
+
 CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8080
 
-# Storage Configuration
-STORAGE_PATH=./storage
+- **Backend**: Go 1.25, Gin web framework
 
-# Executor Service
-EXECUTOR_URL=http://localhost:9000
-```
+- **Database**: PostgreSQL 15+# Storage Configuration
 
-### Installation Methods
+- **Container Orchestration**: Kubernetes (client-go v0.34.1)STORAGE_PATH=./storage
 
-#### Option 1: Docker Compose (Recommended)
+- **Build Tool**: Kaniko (in-cluster Docker builds)
 
-```bash
+- **Security**: Trivy scanner# Executor Service
+
+- **Communication**: gRPC (executor), WebSocket (frontend)EXECUTOR_URL=http://localhost:9000
+
+- **Authentication**: JWT-based auth```
+
+
+
+## API Endpoints### Installation Methods
+
+
+
+### Authentication#### Option 1: Docker Compose (Recommended)
+
+- `POST /api/v1/auth/register` - Register new user
+
+- `POST /api/v1/auth/login` - Login```bash
+
 # Start all services (backend + database)
-docker-compose up -d
 
-# View logs
-docker-compose logs -f backend
+### Agentsdocker-compose up -d
 
-# Stop services
+- `GET /api/v1/agents` - List all agents
+
+- `GET /api/v1/agents/my` - Get user's agents# View logs
+
+- `POST /api/v1/agents` - Create agentdocker-compose logs -f backend
+
+- `PUT /api/v1/agents/:id` - Update agent
+
+- `DELETE /api/v1/agents/:id` - Delete agent# Stop services
+
 docker-compose down
-```
 
-#### Option 2: Local Development
+### Submissions```
 
-1. Install dependencies:
+- `POST /api/v1/submissions` - Submit agent code
+
+- `GET /api/v1/submissions/:id` - Get submission details#### Option 2: Local Development
+
+- `GET /api/v1/submissions/:id/build-status` - Check build status
+
+- `POST /api/v1/submissions/:id/rebuild` - Retry failed build1. Install dependencies:
+
 ```bash
-go mod download
-```
 
-2. Set up PostgreSQL database:
+### Matchesgo mod download
+
+- `POST /api/v1/matches` - Create match (manual)```
+
+- `GET /api/v1/matches/:id` - Get match details
+
+- `GET /api/v1/matches/agent/:id` - List agent matches2. Set up PostgreSQL database:
+
 ```bash
-# Create database
-createdb rl_arena
 
-# Run migrations
+### WebSocket# Create database
+
+- `GET /api/v1/ws` - WebSocket connection for real-time updatescreatedb rl_arena
+
+
+
+See [API_DOCUMENTATION.md](API_DOCUMENTATION.md) for complete reference.# Run migrations
+
 make migrate-up
-```
 
-3. Run the server:
+## Auto-Matchmaking```
+
+
+
+Agents are automatically matched after successful build:3. Run the server:
+
 ```bash
-# Development mode with hot reload
-make dev
 
-# Or build and run
-make build
+1. **Build Success** → Agent joins matchmaking queue# Development mode with hot reload
+
+2. **Every 30s** → Matching service finds suitable opponentsmake dev
+
+3. **ELO-based** → Matches agents with similar skill (±100 to ±500 ELO)
+
+4. **Auto-Execute** → Match runs automatically# Or build and run
+
+5. **Update Ratings** → ELO ratings updated after matchmake build
+
 ./bin/server
-```
 
-### Available Make Commands
+See [AUTO_MATCHMAKING.md](docs/AUTO_MATCHMAKING.md) for details.```
 
-```bash
-make help          # Show available commands
-make build         # Build the application
-make run           # Run the application
+
+
+## Environment Variables### Available Make Commands
+
+
+
+```env```bash
+
+# Servermake help          # Show available commands
+
+PORT=8080make build         # Build the application
+
+ENV=developmentmake run           # Run the application
+
 make dev           # Run with hot reload
-make test          # Run tests
-make test-coverage # Run tests with coverage
+
+# Databasemake test          # Run tests
+
+DATABASE_URL=postgresql://postgres:password@localhost:5432/rl_arenamake test-coverage # Run tests with coverage
+
 make lint          # Run linters
-make migrate-up    # Apply database migrations
-make migrate-down  # Rollback database migrations
-make docker-build  # Build Docker image
+
+# JWTmake migrate-up    # Apply database migrations
+
+JWT_SECRET=your-secret-keymake migrate-down  # Rollback database migrations
+
+JWT_EXPIRY=24hmake docker-build  # Build Docker image
+
 make clean         # Clean build artifacts
-```
 
-## 📖 API Usage
+# Kubernetes```
 
-### Authentication
+USE_K8S=true
 
-First, register a new user or login to get a JWT token:
+K8S_NAMESPACE=rl-arena## 📖 API Usage
+
+CONTAINER_REGISTRY_URL=docker.io/username
+
+CONTAINER_REGISTRY_SECRET=regcred### Authentication
+
+
+
+# ExecutorFirst, register a new user or login to get a JWT token:
+
+EXECUTOR_URL=localhost:50051
 
 ```bash
-# Register a new user
-curl -X POST http://localhost:8080/api/v1/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "username": "alice",
-    "email": "alice@example.com",
-    "password": "securepassword",
-    "fullName": "Alice Smith"
-  }'
 
-# Login to get JWT token
-curl -X POST http://localhost:8080/api/v1/auth/login \
-  -H "Content-Type: application/json" \
+# CORS# Register a new user
+
+CORS_ALLOWED_ORIGINS=http://localhost:3000curl -X POST http://localhost:8080/api/v1/auth/register \
+
+```  -H "Content-Type: application/json" \
+
   -d '{
-    "username": "alice",
-    "password": "securepassword"
-  }'
+
+## Development    "username": "alice",
+
+    "email": "alice@example.com",
+
+### Run Tests    "password": "securepassword",
+
+    "fullName": "Alice Smith"
+
+```bash  }'
+
+go test ./...
+
+```# Login to get JWT token
+
+curl -X POST http://localhost:8080/api/v1/auth/login \
+
+### Build  -H "Content-Type: application/json" \
+
+  -d '{
+
+```bash    "username": "alice",
+
+go build -o rl-arena-backend ./cmd/server    "password": "securepassword"
+
+```  }'
+
 ```
+
+### Docker
 
 ### Agent Management
 
 ```bash
-# Create a new agent
-curl -X POST http://localhost:8080/api/v1/agents \
+
+docker build -t rl-arena-backend .```bash
+
+docker run -p 8080:8080 rl-arena-backend# Create a new agent
+
+```curl -X POST http://localhost:8080/api/v1/agents \
+
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
-  -H "Content-Type: application/json" \
+
+### Kubernetes Deploy  -H "Content-Type: application/json" \
+
   -d '{
-    "name": "My RL Agent",
-    "description": "A reinforcement learning agent for Tic-Tac-Toe",
-    "environmentId": "tictactoe"
+
+```bash    "name": "My RL Agent",
+
+kubectl apply -f k8s/    "description": "A reinforcement learning agent for Tic-Tac-Toe",
+
+```    "environmentId": "tictactoe"
+
   }'
+
+## Contributing
 
 # Get leaderboard
-curl http://localhost:8080/api/v1/leaderboard
+
+Contributions welcome! Please:curl http://localhost:8080/api/v1/leaderboard
+
 ```
 
-### Code Submission
+1. Fork the repository
 
-```bash
+2. Create a feature branch### Code Submission
+
+3. Make your changes
+
+4. Submit a pull request```bash
+
 # Submit agent code
-curl -X POST http://localhost:8080/api/v1/submissions \
+
+## Licensecurl -X POST http://localhost:8080/api/v1/submissions \
+
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
-  -H "Content-Type: application/json" \
+
+MIT License - see [LICENSE](LICENSE) file for details.  -H "Content-Type: application/json" \
+
   -d '{
-    "agentId": "agent-uuid",
+
+## Authors    "agentId": "agent-uuid",
+
     "codeUrl": "https://github.com/user/agent/archive/main.zip"
-  }'
+
+- RL Arena Team  }'
+
 ```
+
+## Support
 
 For complete API documentation, see [API_DOCUMENTATION.md](./API_DOCUMENTATION.md).
 
-## 🗂️ Database Schema
+For issues and questions:
+
+- GitHub Issues: [github.com/rl-arena/rl-arena-backend/issues](https://github.com/rl-arena/rl-arena-backend/issues)## 🗂️ Database Schema
+
 
 The application uses PostgreSQL with the following main entities:
 

@@ -15,11 +15,12 @@ const (
 )
 
 type Submission struct {
-	ID           string           `json:"id" db:"id"`
-	AgentID      string           `json:"agentId" db:"agent_id"`
-	Version      int              `json:"version" db:"version"`
-	Status       SubmissionStatus `json:"status" db:"status"`
-	CodeURL      string           `json:"codeUrl" db:"code_url"`
+	ID            string           `json:"id" db:"id"`
+	AgentID       string           `json:"agentId" db:"agent_id"`
+	EnvironmentID *string          `json:"environmentId,omitempty" db:"environment_id"`
+	Version       int              `json:"version" db:"version"`
+	Status        SubmissionStatus `json:"status" db:"status"`
+	CodeURL       string           `json:"codeUrl" db:"code_url"`
 	
 	// Docker Build 관련 필드
 	DockerImageURL *string `json:"dockerImageUrl,omitempty" db:"docker_image_url"`
@@ -38,6 +39,7 @@ type Submission struct {
 }
 
 type CreateSubmissionRequest struct {
-	AgentID string `json:"agentId" binding:"required"`
-	CodeURL string `json:"codeUrl" binding:"required"`
+	AgentID       string  `json:"agentId" binding:"required"`
+	EnvironmentID *string `json:"environmentId"`
+	CodeURL       string  `json:"codeUrl" binding:"required"`
 }

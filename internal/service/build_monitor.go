@@ -17,14 +17,15 @@ import (
 
 // BuildMonitor K8s Job을 Watch하여 빌드 상태를 실시간 추적
 type BuildMonitor struct {
-	builderService *BuilderService
-	submissionRepo *repository.SubmissionRepository
-	wsHub          *websocket.Hub
-	logger         *zap.Logger
-	stopChan       chan struct{}
-	wg             sync.WaitGroup
-	running        bool
-	mu             sync.Mutex
+	builderService     *BuilderService
+	submissionRepo     *repository.SubmissionRepository
+	wsHub              *websocket.Hub
+	matchmakingService *MatchmakingService
+	logger             *zap.Logger
+	stopChan           chan struct{}
+	wg                 sync.WaitGroup
+	running            bool
+	mu                 sync.Mutex
 	
 	// Watch 관련
 	watcher        watch_api.Interface
@@ -37,16 +38,18 @@ func NewBuildMonitor(
 	builderService *BuilderService,
 	submissionRepo *repository.SubmissionRepository,
 	wsHub *websocket.Hub,
+	matchmakingService *MatchmakingService,
 	checkInterval time.Duration, // 호환성을 위해 유지하지만 사용하지 않음
 ) *BuildMonitor {
 	logger, _ := zap.NewProduction()
 
 	return &BuildMonitor{
-		builderService: builderService,
-		submissionRepo: submissionRepo,
-		wsHub:          wsHub,
-		logger:         logger,
-		stopChan:       make(chan struct{}),
+		builderService:     builderService,
+		submissionRepo:     submissionRepo,
+		wsHub:              wsHub,
+		matchmakingService: matchmakingService,
+		logger:             logger,
+		stopChan:           make(chan struct{}),
 	}
 }
 
@@ -343,6 +346,23 @@ func (m *BuildMonitor) handleBuildSuccess(ctx context.Context, submission *model
 			"Build completed successfully",
 			imageURL,
 		)
+	}
+
+	// 자동 매칭 큐에 등록 (EnvironmentID가 있는 경우)
+	if m.matchmakingService != nil && submission.EnvironmentID != nil {
+		if err := m.matchmakingService.EnqueueAgent(
+			submission.AgentID,
+			*submission.EnvironmentID,
+		); err != nil {
+			m.logger.Error("Failed to enqueue agent for matchmaking",
+				zap.String("agentId", submission.AgentID),
+				zap.String("environmentId", *submission.EnvironmentID),
+				zap.Error(err))
+		} else {
+			m.logger.Info("Agent auto-enqueued for matchmaking",
+				zap.String("agentId", submission.AgentID),
+				zap.String("environmentId", *submission.EnvironmentID))
+		}
 	}
 }
 
