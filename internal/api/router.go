@@ -65,16 +65,35 @@ func SetupRouter(cfg *config.Config, db *database.DB) *gin.Engine {
 		if err != nil {
 			// K8s 환경이 아니거나 설정 오류 시 경고만 출력하고 계속 진행
 			println("Warning: Failed to initialize BuilderService:", err.Error())
-		} else {
-			// BuildMonitor 초기화 및 시작 (WebSocket Hub 전달)
-			buildMonitor := service.NewBuildMonitor(builderService, submissionRepo, wsHub, 10*time.Second)
-			buildMonitor.Start()
-			println("BuildMonitor started with K8s Watch API")
 		}
 	}
 
 	submissionService := service.NewSubmissionService(submissionRepo, agentRepo, storageManager, builderService)
 	matchService := service.NewMatchService(matchRepo, agentRepo, submissionRepo, eloService, executorClient)
+
+	// Matchmaking Service 초기화 및 시작
+	matchmakingRepo := repository.NewMatchmakingRepository(db)
+	matchmakingService := service.NewMatchmakingService(
+		matchmakingRepo,
+		agentRepo,
+		matchService,
+		30*time.Second, // 30초마다 매칭 시도
+	)
+	matchmakingService.Start()
+	println("MatchmakingService started (30s interval)")
+
+	// BuildMonitor 초기화 및 시작 (K8s 환경에서만)
+	if cfg.UseK8s && builderService != nil {
+		buildMonitor := service.NewBuildMonitor(
+			builderService,
+			submissionRepo,
+			wsHub,
+			matchmakingService, // 자동 매칭 큐 등록을 위해 전달
+			10*time.Second,
+		)
+		buildMonitor.Start()
+		println("BuildMonitor started with K8s Watch API + Auto-Matchmaking")
+	}
 
 	// Handler 초기화
 	authHandler := handlers.NewAuthHandler(userService, cfg)
@@ -154,6 +173,9 @@ func SetupRouter(cfg *config.Config, db *database.DB) *gin.Engine {
 			users.GET("/me", userHandler.GetCurrentUser)
 			users.PUT("/me", userHandler.UpdateCurrentUser)
 		}
+
+		// WebSocket route
+		v1.GET("/ws", middleware.Auth(cfg), wsHandler.HandleWebSocket)
 	}
 
 	return router
