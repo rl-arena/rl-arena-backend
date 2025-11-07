@@ -8,43 +8,49 @@ import (
 
 	"github.com/rl-arena/rl-arena-backend/internal/models"
 	"github.com/rl-arena/rl-arena-backend/internal/repository"
+	"github.com/rl-arena/rl-arena-backend/internal/websocket"
 	"go.uber.org/zap"
+	batchv1 "k8s.io/api/batch/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	watch_api "k8s.io/apimachinery/pkg/watch"
 )
 
-// BuildMonitor K8s Job을 모니터링하여 빌드 상태를 추적
+// BuildMonitor K8s Job을 Watch하여 빌드 상태를 실시간 추적
 type BuildMonitor struct {
 	builderService *BuilderService
 	submissionRepo *repository.SubmissionRepository
+	wsHub          *websocket.Hub
 	logger         *zap.Logger
-	checkInterval  time.Duration
 	stopChan       chan struct{}
 	wg             sync.WaitGroup
 	running        bool
 	mu             sync.Mutex
+	
+	// Watch 관련
+	watcher        watch_api.Interface
+	watchCtx       context.Context
+	watchCancel    context.CancelFunc
 }
 
 // NewBuildMonitor BuildMonitor 생성
 func NewBuildMonitor(
 	builderService *BuilderService,
 	submissionRepo *repository.SubmissionRepository,
-	checkInterval time.Duration,
+	wsHub *websocket.Hub,
+	checkInterval time.Duration, // 호환성을 위해 유지하지만 사용하지 않음
 ) *BuildMonitor {
 	logger, _ := zap.NewProduction()
-	
-	if checkInterval == 0 {
-		checkInterval = 10 * time.Second // 기본 10초
-	}
 
 	return &BuildMonitor{
 		builderService: builderService,
 		submissionRepo: submissionRepo,
+		wsHub:          wsHub,
 		logger:         logger,
-		checkInterval:  checkInterval,
 		stopChan:       make(chan struct{}),
 	}
 }
 
-// Start 모니터링 시작
+// Start 모니터링 시작 (K8s Watch API 사용)
 func (m *BuildMonitor) Start() {
 	m.mu.Lock()
 	if m.running {
@@ -54,11 +60,13 @@ func (m *BuildMonitor) Start() {
 	m.running = true
 	m.mu.Unlock()
 
-	m.logger.Info("Starting BuildMonitor",
-		zap.Duration("checkInterval", m.checkInterval))
+	m.logger.Info("Starting BuildMonitor with K8s Watch API")
+
+	// Watch context 생성
+	m.watchCtx, m.watchCancel = context.WithCancel(context.Background())
 
 	m.wg.Add(1)
-	go m.monitorLoop()
+	go m.watchLoop()
 }
 
 // Stop 모니터링 중지
@@ -72,29 +80,161 @@ func (m *BuildMonitor) Stop() {
 	m.mu.Unlock()
 
 	m.logger.Info("Stopping BuildMonitor")
+	
+	// Watch 취소
+	if m.watchCancel != nil {
+		m.watchCancel()
+	}
+	
+	// Watcher 종료
+	if m.watcher != nil {
+		m.watcher.Stop()
+	}
+	
 	close(m.stopChan)
 	m.wg.Wait()
 	m.logger.Info("BuildMonitor stopped")
 }
 
-// monitorLoop 주기적으로 빌드 상태 확인
-func (m *BuildMonitor) monitorLoop() {
+// watchLoop K8s Watch API를 사용하여 Job 이벤트 실시간 감지
+func (m *BuildMonitor) watchLoop() {
 	defer m.wg.Done()
 
-	ticker := time.NewTicker(m.checkInterval)
-	defer ticker.Stop()
+	// 재연결 로직을 위한 백오프
+	backoff := time.Second
+	maxBackoff := time.Minute
 
 	for {
 		select {
-		case <-ticker.C:
-			m.checkAllBuilds()
 		case <-m.stopChan:
 			return
+		case <-m.watchCtx.Done():
+			return
+		default:
+		}
+
+		// Watch 시작
+		if err := m.startWatch(); err != nil {
+			m.logger.Error("Failed to start watch", zap.Error(err))
+			
+			// 백오프 후 재시도
+			select {
+			case <-time.After(backoff):
+				// 백오프 증가 (최대 1분)
+				backoff *= 2
+				if backoff > maxBackoff {
+					backoff = maxBackoff
+				}
+			case <-m.stopChan:
+				return
+			case <-m.watchCtx.Done():
+				return
+			}
+			continue
+		}
+
+		// Watch 성공적으로 시작됨, 백오프 리셋
+		backoff = time.Second
+	}
+}
+
+// startWatch K8s Job Watch 시작
+func (m *BuildMonitor) startWatch() error {
+	// 빌드 전용 레이블로 필터링
+	labelSelector := "app=kaniko-builder"
+	
+	m.logger.Info("Starting K8s Job watch", zap.String("labelSelector", labelSelector))
+
+	// Watch 생성
+	watcher, err := m.builderService.k8sClient.BatchV1().Jobs(m.builderService.namespace).Watch(
+		m.watchCtx,
+		metav1.ListOptions{
+			LabelSelector: labelSelector,
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create watcher: %w", err)
+	}
+
+	m.watcher = watcher
+	defer func() {
+		if m.watcher != nil {
+			m.watcher.Stop()
+			m.watcher = nil
+		}
+	}()
+
+	// 이벤트 처리
+	for {
+		select {
+		case event, ok := <-watcher.ResultChan():
+			if !ok {
+				m.logger.Warn("Watch channel closed, reconnecting...")
+				return fmt.Errorf("watch channel closed")
+			}
+
+			m.handleWatchEvent(event)
+
+		case <-m.stopChan:
+			return nil
+		case <-m.watchCtx.Done():
+			return nil
 		}
 	}
 }
 
-// checkAllBuilds 모든 'building' 상태의 Submission 확인
+// handleWatchEvent Watch 이벤트 처리
+func (m *BuildMonitor) handleWatchEvent(event watch_api.Event) {
+	job, ok := event.Object.(*batchv1.Job)
+	if !ok {
+		m.logger.Warn("Unexpected object type in watch event")
+		return
+	}
+
+	m.logger.Debug("Received Job event",
+		zap.String("type", string(event.Type)),
+		zap.String("jobName", job.Name),
+		zap.Int32("active", job.Status.Active),
+		zap.Int32("succeeded", job.Status.Succeeded),
+		zap.Int32("failed", job.Status.Failed))
+
+	// ADDED, MODIFIED 이벤트만 처리
+	if event.Type != watch_api.Added && event.Type != watch_api.Modified {
+		return
+	}
+
+	// Job에서 submissionId 추출
+	submissionID, ok := job.Labels["submission-id"]
+	if !ok {
+		m.logger.Warn("Job has no submission-id label", zap.String("jobName", job.Name))
+		return
+	}
+
+	// Submission 조회
+	ctx := context.Background()
+	submission, err := m.submissionRepo.FindByID(submissionID)
+	if err != nil {
+		m.logger.Error("Failed to find submission",
+			zap.String("submissionId", submissionID),
+			zap.Error(err))
+		return
+	}
+
+	// 이미 처리된 상태면 스킵
+	if submission.Status != models.SubmissionStatusBuilding {
+		return
+	}
+
+	// Job 상태에 따라 처리
+	if job.Status.Succeeded > 0 {
+		m.handleBuildSuccess(ctx, submission)
+	} else if job.Status.Failed > 0 {
+		m.handleBuildFailure(ctx, submission)
+	}
+	// Active > 0이면 아직 빌드 중
+}
+
+// checkAllBuilds는 더 이상 사용하지 않지만 초기 상태 복구를 위해 유지
 func (m *BuildMonitor) checkAllBuilds() {
 	ctx := context.Background()
 
@@ -109,7 +249,7 @@ func (m *BuildMonitor) checkAllBuilds() {
 		return
 	}
 
-	m.logger.Debug("Checking builds",
+	m.logger.Info("Recovering building submissions",
 		zap.Int("count", len(submissions)))
 
 	for _, submission := range submissions {
@@ -117,7 +257,7 @@ func (m *BuildMonitor) checkAllBuilds() {
 	}
 }
 
-// checkBuild 개별 Submission의 빌드 상태 확인
+// checkBuild 개별 Submission의 빌드 상태 확인 (복구용)
 func (m *BuildMonitor) checkBuild(ctx context.Context, submission *models.Submission) {
 	if submission.BuildJobName == nil || *submission.BuildJobName == "" {
 		m.logger.Warn("Submission has no build job name",
@@ -187,6 +327,22 @@ func (m *BuildMonitor) handleBuildSuccess(ctx context.Context, submission *model
 		m.logger.Error("Failed to update submission status to success",
 			zap.String("submissionId", submission.ID),
 			zap.Error(err))
+		return
+	}
+
+	// WebSocket으로 실시간 알림 전송
+	if m.wsHub != nil {
+		imageURL := ""
+		if submission.DockerImageURL != nil {
+			imageURL = *submission.DockerImageURL
+		}
+		m.wsHub.SendBuildStatus(
+			submission.AgentID,
+			submission.ID,
+			string(models.SubmissionStatusSuccess),
+			"Build completed successfully",
+			imageURL,
+		)
 	}
 }
 
@@ -230,5 +386,17 @@ func (m *BuildMonitor) handleBuildFailure(ctx context.Context, submission *model
 		m.logger.Error("Failed to update submission status to build_failed",
 			zap.String("submissionId", submission.ID),
 			zap.Error(err))
+		return
+	}
+
+	// WebSocket으로 실시간 알림 전송
+	if m.wsHub != nil {
+		m.wsHub.SendBuildStatus(
+			submission.AgentID,
+			submission.ID,
+			string(models.SubmissionStatusBuildFailed),
+			errorMsg,
+			"",
+		)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/rl-arena/rl-arena-backend/internal/config"
 	"github.com/rl-arena/rl-arena-backend/internal/repository"
 	"github.com/rl-arena/rl-arena-backend/internal/service"
+	"github.com/rl-arena/rl-arena-backend/internal/websocket"
 	"github.com/rl-arena/rl-arena-backend/pkg/database"
 	"github.com/rl-arena/rl-arena-backend/pkg/executor"
 	"github.com/rl-arena/rl-arena-backend/pkg/storage"
@@ -47,6 +48,11 @@ func SetupRouter(cfg *config.Config, db *database.DB) *gin.Engine {
 	userService := service.NewUserService(userRepo)
 	agentService := service.NewAgentService(agentRepo)
 
+	// WebSocket Hub 초기화 및 시작
+	wsHub := websocket.NewHub()
+	go wsHub.Run()
+	println("WebSocket Hub started")
+
 	// Builder Service 초기화 (K8s 환경에서만)
 	var builderService *service.BuilderService
 	if cfg.UseK8s {
@@ -60,10 +66,10 @@ func SetupRouter(cfg *config.Config, db *database.DB) *gin.Engine {
 			// K8s 환경이 아니거나 설정 오류 시 경고만 출력하고 계속 진행
 			println("Warning: Failed to initialize BuilderService:", err.Error())
 		} else {
-			// BuildMonitor 초기화 및 시작
-			buildMonitor := service.NewBuildMonitor(builderService, submissionRepo, 10*time.Second)
+			// BuildMonitor 초기화 및 시작 (WebSocket Hub 전달)
+			buildMonitor := service.NewBuildMonitor(builderService, submissionRepo, wsHub, 10*time.Second)
 			buildMonitor.Start()
-			println("BuildMonitor started successfully")
+			println("BuildMonitor started with K8s Watch API")
 		}
 	}
 
@@ -77,6 +83,7 @@ func SetupRouter(cfg *config.Config, db *database.DB) *gin.Engine {
 	submissionHandler := handlers.NewSubmissionHandler(submissionService)
 	matchHandler := handlers.NewMatchHandler(matchService)
 	leaderboardHandler := handlers.NewLeaderboardHandler(agentService)
+	wsHandler := handlers.NewWebSocketHandler(wsHub)
 
 	// Health check
 	router.GET("/health", handlers.HealthCheck)
@@ -87,6 +94,9 @@ func SetupRouter(cfg *config.Config, db *database.DB) *gin.Engine {
 	// API v1
 	v1 := router.Group("/api/v1")
 	{
+		// WebSocket endpoint
+		v1.GET("/ws", middleware.Auth(cfg), wsHandler.HandleWebSocket)
+
 		// Auth routes
 		auth := v1.Group("/auth")
 		{
