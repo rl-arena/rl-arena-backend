@@ -2,7 +2,7 @@
 -- Agent 제출 시 어떤 환경용인지 추적
 
 ALTER TABLE submissions
-ADD COLUMN environment_id UUID REFERENCES environments(id);
+ADD COLUMN environment_id VARCHAR(50) REFERENCES environments(id);
 
 -- 기존 데이터는 pong 환경으로 설정 (환경 ID는 실제 DB에서 확인 필요)
 -- UPDATE submissions SET environment_id = (SELECT id FROM environments WHERE name = 'pong' LIMIT 1);

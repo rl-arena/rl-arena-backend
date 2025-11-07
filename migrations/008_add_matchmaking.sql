@@ -1,11 +1,14 @@
 -- 008_add_matchmaking.sql
 -- 자동 매칭 시스템을 위한 큐 및 기록 테이블
 
+-- UUID extension 활성화 (이미 활성화되어 있으면 무시됨)
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 -- 매칭 큐 테이블
 CREATE TABLE IF NOT EXISTS matchmaking_queue (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     agent_id UUID NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
-    environment_id UUID NOT NULL REFERENCES environments(id),
+    environment_id VARCHAR(50) NOT NULL REFERENCES environments(id),
     elo_rating INTEGER NOT NULL,
     priority INTEGER DEFAULT 5,
     queued_at TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -25,10 +28,10 @@ COMMENT ON COLUMN matchmaking_queue.priority IS '1 (highest) to 10 (lowest)';
 
 -- 매칭 기록 테이블
 CREATE TABLE IF NOT EXISTS matchmaking_history (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     agent1_id UUID NOT NULL REFERENCES agents(id),
     agent2_id UUID NOT NULL REFERENCES agents(id),
-    environment_id UUID NOT NULL REFERENCES environments(id),
+    environment_id VARCHAR(50) NOT NULL REFERENCES environments(id),
     match_id UUID REFERENCES matches(id),
     elo_difference INTEGER,
     matched_at TIMESTAMP NOT NULL DEFAULT NOW()
