@@ -54,6 +54,9 @@ func main() {
 		"env", cfg.Env,
 	)
 
+	// DEBUG: DATABASE_URL 출력
+	logger.Info("Database URL", "url", cfg.DatabaseURL)
+
 	// 데이터베이스 연결
 	db, err := database.Connect(cfg.DatabaseURL)
 	if err != nil {

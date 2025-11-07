@@ -48,7 +48,8 @@ func Auth(cfg *config.Config) gin.HandlerFunc {
 		}
 
 		// 검증 성공 - 사용자 정보를 context에 저장
-		c.Set("userId", claims.UserID)
+		c.Set("userID", claims.UserID)  // 대문자 ID로 변경
+		c.Set("userId", claims.UserID)  // 하위 호환성
 		c.Set("username", claims.Username)
 		c.Set("email", claims.Email)
 

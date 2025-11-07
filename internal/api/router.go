@@ -15,6 +15,7 @@ import (
 	"github.com/rl-arena/rl-arena-backend/internal/websocket"
 	"github.com/rl-arena/rl-arena-backend/pkg/database"
 	"github.com/rl-arena/rl-arena-backend/pkg/executor"
+	"github.com/rl-arena/rl-arena-backend/pkg/logger"
 	"github.com/rl-arena/rl-arena-backend/pkg/ratelimit"
 	"github.com/rl-arena/rl-arena-backend/pkg/storage"
 )
@@ -38,7 +39,8 @@ func SetupRouter(cfg *config.Config, db *database.DB, redisLimiter *ratelimit.Re
 	// Executor 클라이언트 초기화 (gRPC)
 	executorClient, err := executor.NewClient(cfg.ExecutorURL)
 	if err != nil {
-		panic("Failed to connect to executor: " + err.Error())
+		logger.Warn("Failed to connect to executor (continuing without executor)", "error", err)
+		executorClient = nil // Executor 없이 계속 진행
 	}
 
 	// Repository 초기화
@@ -233,9 +235,6 @@ func SetupRouter(cfg *config.Config, db *database.DB, redisLimiter *ratelimit.Re
 			users.GET("/me", userHandler.GetCurrentUser)
 			users.PUT("/me", userHandler.UpdateCurrentUser)
 		}
-
-		// WebSocket route
-		v1.GET("/ws", middleware.Auth(cfg), wsHandler.HandleWebSocket)
 	}
 
 	return router
