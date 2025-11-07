@@ -82,6 +82,18 @@ func (s *MatchService) CreateAndExecute(agent1ID, agent2ID string) (*models.Matc
 		return nil, fmt.Errorf("agent2 submission not found")
 	}
 
+	// Docker 이미지 또는 코드 URL 결정
+	agent1Source, agent1IsDocker := s.getAgentSource(sub1)
+	agent2Source, agent2IsDocker := s.getAgentSource(sub2)
+
+	// 빌드 중인 Submission 확인
+	if agent1Source == "" {
+		return nil, fmt.Errorf("agent1 submission is not ready (status: %s)", sub1.Status)
+	}
+	if agent2Source == "" {
+		return nil, fmt.Errorf("agent2 submission is not ready (status: %s)", sub2.Status)
+	}
+
 	// 매치 생성
 	match, err := s.matchRepo.Create(agent1.EnvironmentID, agent1ID, agent2ID)
 	if err != nil {
@@ -91,7 +103,11 @@ func (s *MatchService) CreateAndExecute(agent1ID, agent2ID string) (*models.Matc
 	logger.Info("Match created",
 		"matchId", match.ID,
 		"agent1", agent1.Name,
+		"agent1Source", agent1Source,
+		"agent1IsDocker", agent1IsDocker,
 		"agent2", agent2.Name,
+		"agent2Source", agent2Source,
+		"agent2IsDocker", agent2IsDocker,
 		"environment", agent1.EnvironmentID,
 	)
 
@@ -102,12 +118,12 @@ func (s *MatchService) CreateAndExecute(agent1ID, agent2ID string) (*models.Matc
 		Agent1: executor.AgentInfo{
 			ID:      agent1.ID,
 			Name:    agent1.Name,
-			CodeURL: sub1.CodeURL,
+			CodeURL: agent1Source,
 		},
 		Agent2: executor.AgentInfo{
 			ID:      agent2.ID,
 			Name:    agent2.Name,
-			CodeURL: sub2.CodeURL,
+			CodeURL: agent2Source,
 		},
 	}
 
@@ -218,4 +234,26 @@ func (s *MatchService) GetByAgentID(agentID string, page, pageSize int) ([]*mode
 	}
 
 	return matches, nil
+}
+
+// getAgentSource Docker 이미지 URL 또는 코드 URL 결정
+// Returns: (source, isDockerImage)
+func (s *MatchService) getAgentSource(submission *models.Submission) (string, bool) {
+	// 1. Docker 이미지가 빌드되었으면 우선 사용
+	if submission.DockerImageURL != nil && *submission.DockerImageURL != "" {
+		// 빌드가 성공한 경우에만 사용
+		if submission.Status == models.SubmissionStatusSuccess ||
+			submission.Status == models.SubmissionStatusActive {
+			return *submission.DockerImageURL, true
+		}
+	}
+
+	// 2. 빌드 중이면 대기 필요
+	if submission.Status == models.SubmissionStatusBuilding {
+		return "", false
+	}
+
+	// 3. 빌드 실패했거나 Docker 이미지가 없으면 코드 URL 사용
+	// (fallback for backward compatibility)
+	return submission.CodeURL, false
 }

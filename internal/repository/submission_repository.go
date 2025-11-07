@@ -145,6 +145,50 @@ func (r *SubmissionRepository) FindByAgentID(agentID string) ([]*models.Submissi
 	return submissions, nil
 }
 
+// FindByStatus 특정 상태의 모든 Submission 조회
+func (r *SubmissionRepository) FindByStatus(status models.SubmissionStatus) ([]*models.Submission, error) {
+	query := `
+		SELECT id, agent_id, version, status, code_url, docker_image_url,
+		       build_job_name, build_pod_name, build_log, error_message,
+		       is_active, created_at, updated_at
+		FROM submissions
+		WHERE status = $1
+		ORDER BY created_at DESC
+	`
+
+	rows, err := r.db.Query(query, status)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query submissions by status: %w", err)
+	}
+	defer rows.Close()
+
+	var submissions []*models.Submission
+	for rows.Next() {
+		submission := &models.Submission{}
+		err := rows.Scan(
+			&submission.ID,
+			&submission.AgentID,
+			&submission.Version,
+			&submission.Status,
+			&submission.CodeURL,
+			&submission.DockerImageURL,
+			&submission.BuildJobName,
+			&submission.BuildPodName,
+			&submission.BuildLog,
+			&submission.ErrorMessage,
+			&submission.IsActive,
+			&submission.CreatedAt,
+			&submission.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan submission: %w", err)
+		}
+		submissions = append(submissions, submission)
+	}
+
+	return submissions, nil
+}
+
 // GetActiveSubmission 에이전트의 활성 제출 가져오기
 func (r *SubmissionRepository) GetActiveSubmission(agentID string) (*models.Submission, error) {
 	query := `
