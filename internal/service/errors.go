@@ -30,4 +30,5 @@ var (
 // Submission service specific errors
 var (
 	ErrSubmissionNotFound = errors.New("submission not found")
+	ErrInvalidFile        = errors.New("invalid file")
 )

@@ -196,10 +196,42 @@ func (h *SubmissionHandler) GetBuildLogs(c *gin.Context) {
 	})
 }
 
+// RebuildSubmission 제출 재빌드
+func (h *SubmissionHandler) RebuildSubmission(c *gin.Context) {
+	userId, _ := c.Get("userId")
+	submissionId := c.Param("id")
+
+	if submissionId == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "submission ID is required",
+		})
+		return
+	}
+
+	err := h.submissionService.RebuildSubmission(submissionId, userId.(string))
+	if err != nil {
+		if errors.Is(err, service.ErrMaxRetriesExceeded) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "Maximum retry count exceeded",
+				"message": "This submission has already been retried 3 times",
+			})
+			return
+		}
+		h.handleError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Submission rebuild initiated successfully",
+	})
+}
+
 // handleError 에러 처리 헬퍼
 func (h *SubmissionHandler) handleError(c *gin.Context, err error) {
 	if errors.Is(err, service.ErrAgentNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Agent not found"})
+	} else if errors.Is(err, service.ErrSubmissionNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Submission not found"})
 	} else if errors.Is(err, service.ErrUnauthorized) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Unauthorized"})
 	} else if errors.Is(err, service.ErrInvalidFile) {

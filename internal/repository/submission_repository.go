@@ -3,6 +3,7 @@ package repository
 import (
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/rl-arena/rl-arena-backend/internal/models"
 	"github.com/rl-arena/rl-arena-backend/pkg/database"
@@ -32,11 +33,11 @@ func (r *SubmissionRepository) Create(agentID, codeURL string) (*models.Submissi
 
 	// Submission 생성
 	query := `
-		INSERT INTO submissions (agent_id, version, status, code_url)
-		VALUES ($1, $2, 'pending', $3)
+		INSERT INTO submissions (agent_id, version, status, code_url, retry_count)
+		VALUES ($1, $2, 'pending', $3, 0)
 		RETURNING id, agent_id, version, status, code_url, docker_image_url, 
 		          build_job_name, build_pod_name, build_log, error_message, 
-		          is_active, created_at, updated_at
+		          retry_count, last_retry_at, is_active, created_at, updated_at
 	`
 
 	submission := &models.Submission{}
@@ -51,6 +52,8 @@ func (r *SubmissionRepository) Create(agentID, codeURL string) (*models.Submissi
 		&submission.BuildPodName,
 		&submission.BuildLog,
 		&submission.ErrorMessage,
+		&submission.RetryCount,
+		&submission.LastRetryAt,
 		&submission.IsActive,
 		&submission.CreatedAt,
 		&submission.UpdatedAt,
@@ -68,6 +71,7 @@ func (r *SubmissionRepository) FindByID(id string) (*models.Submission, error) {
 	query := `
 		SELECT id, agent_id, version, status, code_url, docker_image_url,
 		       build_job_name, build_pod_name, build_log, error_message,
+		       retry_count, last_retry_at,
 		       is_active, created_at, updated_at
 		FROM submissions
 		WHERE id = $1
@@ -85,6 +89,8 @@ func (r *SubmissionRepository) FindByID(id string) (*models.Submission, error) {
 		&submission.BuildPodName,
 		&submission.BuildLog,
 		&submission.ErrorMessage,
+		&submission.RetryCount,
+		&submission.LastRetryAt,
 		&submission.IsActive,
 		&submission.CreatedAt,
 		&submission.UpdatedAt,
@@ -106,6 +112,7 @@ func (r *SubmissionRepository) FindByAgentID(agentID string) ([]*models.Submissi
 	query := `
 		SELECT id, agent_id, version, status, code_url, docker_image_url,
 		       build_job_name, build_pod_name, build_log, error_message,
+		       retry_count, last_retry_at,
 		       is_active, created_at, updated_at
 		FROM submissions
 		WHERE agent_id = $1
@@ -132,6 +139,8 @@ func (r *SubmissionRepository) FindByAgentID(agentID string) ([]*models.Submissi
 			&submission.BuildPodName,
 			&submission.BuildLog,
 			&submission.ErrorMessage,
+			&submission.RetryCount,
+			&submission.LastRetryAt,
 			&submission.IsActive,
 			&submission.CreatedAt,
 			&submission.UpdatedAt,
@@ -150,6 +159,7 @@ func (r *SubmissionRepository) FindByStatus(status models.SubmissionStatus) ([]*
 	query := `
 		SELECT id, agent_id, version, status, code_url, docker_image_url,
 		       build_job_name, build_pod_name, build_log, error_message,
+		       retry_count, last_retry_at,
 		       is_active, created_at, updated_at
 		FROM submissions
 		WHERE status = $1
@@ -176,6 +186,8 @@ func (r *SubmissionRepository) FindByStatus(status models.SubmissionStatus) ([]*
 			&submission.BuildPodName,
 			&submission.BuildLog,
 			&submission.ErrorMessage,
+			&submission.RetryCount,
+			&submission.LastRetryAt,
 			&submission.IsActive,
 			&submission.CreatedAt,
 			&submission.UpdatedAt,
@@ -194,6 +206,7 @@ func (r *SubmissionRepository) GetActiveSubmission(agentID string) (*models.Subm
 	query := `
 		SELECT id, agent_id, version, status, code_url, docker_image_url,
 		       build_job_name, build_pod_name, build_log, error_message,
+		       retry_count, last_retry_at,
 		       is_active, created_at, updated_at
 		FROM submissions
 		WHERE agent_id = $1 AND is_active = true
@@ -212,6 +225,8 @@ func (r *SubmissionRepository) GetActiveSubmission(agentID string) (*models.Subm
 		&submission.BuildPodName,
 		&submission.BuildLog,
 		&submission.ErrorMessage,
+		&submission.RetryCount,
+		&submission.LastRetryAt,
 		&submission.IsActive,
 		&submission.CreatedAt,
 		&submission.UpdatedAt,
@@ -296,6 +311,22 @@ func (r *SubmissionRepository) Delete(id string) error {
 	_, err := r.db.Exec(query, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete submission: %w", err)
+	}
+
+	return nil
+}
+
+// UpdateRetryInfo 재시도 정보 업데이트
+func (r *SubmissionRepository) UpdateRetryInfo(id string, retryCount int, lastRetryAt *time.Time) error {
+	query := `
+		UPDATE submissions
+		SET retry_count = $1, last_retry_at = $2, updated_at = NOW()
+		WHERE id = $3
+	`
+
+	_, err := r.db.Exec(query, retryCount, lastRetryAt, id)
+	if err != nil {
+		return fmt.Errorf("failed to update retry info: %w", err)
 	}
 
 	return nil

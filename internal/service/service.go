@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"mime/multipart"
+	"time"
 
 	"github.com/rl-arena/rl-arena-backend/internal/models"
 	"github.com/rl-arena/rl-arena-backend/internal/repository"
@@ -12,8 +13,12 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	MaxRetryCount = 3 // 최대 재시도 횟수
+)
+
 var (
-	ErrInvalidFile = errors.New("invalid file")
+	ErrMaxRetriesExceeded = errors.New("maximum retry count exceeded")
 )
 
 type SubmissionService struct {
@@ -217,6 +222,91 @@ func (s *SubmissionService) UpdateStatus(submissionID string, status models.Subm
 			s.submissionRepo.SetActive(submissionID, submission.AgentID)
 		}
 	}
+
+	return nil
+}
+
+// RebuildSubmission 제출 재빌드
+func (s *SubmissionService) RebuildSubmission(submissionID, userID string) error {
+	// 제출 조회
+	submission, err := s.submissionRepo.FindByID(submissionID)
+	if err != nil {
+		return fmt.Errorf("failed to find submission: %w", err)
+	}
+	if submission == nil {
+		return ErrSubmissionNotFound
+	}
+
+	// 에이전트 조회 및 소유자 확인
+	agent, err := s.agentRepo.FindByID(submission.AgentID)
+	if err != nil {
+		return fmt.Errorf("failed to find agent: %w", err)
+	}
+	if agent == nil {
+		return ErrAgentNotFound
+	}
+	if agent.UserID != userID {
+		return ErrUnauthorized
+	}
+
+	// 재시도 횟수 확인
+	if submission.RetryCount >= MaxRetryCount {
+		return ErrMaxRetriesExceeded
+	}
+
+	// 재시도 횟수 증가 및 타임스탬프 업데이트
+	now := time.Now()
+	newRetryCount := submission.RetryCount + 1
+	
+	// UpdateRetryInfo 메서드 호출 (아래에서 repository에 추가할 예정)
+	if err := s.submissionRepo.UpdateRetryInfo(submissionID, newRetryCount, &now); err != nil {
+		return fmt.Errorf("failed to update retry info: %w", err)
+	}
+
+	// 상태를 pending으로 리셋
+	if err := s.submissionRepo.UpdateStatus(submissionID, models.SubmissionStatusPending, nil, nil); err != nil {
+		return fmt.Errorf("failed to reset status: %w", err)
+	}
+
+	// Docker 이미지 빌드 재시작 (비동기)
+	if s.builderService != nil {
+		go func() {
+			ctx := context.Background()
+			
+			// 상태를 'building'으로 업데이트
+			status := models.SubmissionStatusBuilding
+			if err := s.submissionRepo.UpdateStatus(submissionID, status, nil, nil); err != nil {
+				s.logger.Error("Failed to update submission status to building",
+					zap.String("submissionId", submissionID),
+					zap.Error(err))
+				return
+			}
+			
+			// 최신 submission 정보를 다시 가져오기
+			updatedSubmission, err := s.submissionRepo.FindByID(submissionID)
+			if err != nil || updatedSubmission == nil {
+				s.logger.Error("Failed to get updated submission",
+					zap.String("submissionId", submissionID),
+					zap.Error(err))
+				return
+			}
+			
+			s.logger.Info("Starting Docker image rebuild",
+				zap.String("submissionId", submissionID),
+				zap.String("codeUrl", updatedSubmission.CodeURL),
+				zap.Int("retryCount", newRetryCount))
+			
+			if err := s.builderService.BuildAgentImage(ctx, updatedSubmission); err != nil {
+				s.logger.Error("Failed to rebuild Docker image",
+					zap.String("submissionId", submissionID),
+					zap.Error(err))
+			}
+		}()
+	}
+
+	s.logger.Info("Submission rebuild initiated",
+		zap.String("submissionId", submissionID),
+		zap.Int("retryCount", newRetryCount))
 
 	return nil
 }

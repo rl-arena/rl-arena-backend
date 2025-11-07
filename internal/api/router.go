@@ -116,6 +116,9 @@ func SetupRouter(cfg *config.Config, db *database.DB) *gin.Engine {
 			// 빌드 관련 엔드포인트
 			submissions.GET("/:id/build-status", submissionHandler.GetBuildStatus)
 			submissions.GET("/:id/build-logs", submissionHandler.GetBuildLogs)
+			
+			// 재빌드 엔드포인트
+			submissions.POST("/:id/rebuild", middleware.Auth(cfg), submissionHandler.RebuildSubmission)
 		}
 
 		// Match routes

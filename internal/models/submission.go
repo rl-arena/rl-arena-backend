@@ -27,6 +27,10 @@ type Submission struct {
 	BuildPodName   *string `json:"buildPodName,omitempty" db:"build_pod_name"`
 	BuildLog       *string `json:"buildLog,omitempty" db:"build_log"`
 	
+	// Retry 관련 필드
+	RetryCount   int        `json:"retryCount" db:"retry_count"`
+	LastRetryAt  *time.Time `json:"lastRetryAt,omitempty" db:"last_retry_at"`
+	
 	ErrorMessage *string   `json:"errorMessage,omitempty" db:"error_message"`
 	IsActive     bool      `json:"isActive" db:"is_active"`
 	CreatedAt    time.Time `json:"createdAt" db:"created_at"`
