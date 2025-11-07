@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rl-arena
+  labels:
+    name: rl-arena
+    app: rl-arena
