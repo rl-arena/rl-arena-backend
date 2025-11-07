@@ -178,7 +178,7 @@ func (r *AgentRepository) FindByEnvironmentID(environmentID string, limit, offse
 		SELECT id, user_id, name, description, environment_id, elo, wins, losses, draws,
 		       total_matches, active_submission_id, created_at, updated_at
 		FROM agents
-		WHERE environment_id = $1
+		WHERE environment_id = $1 AND active_submission_id IS NOT NULL
 		ORDER BY elo DESC
 		LIMIT $2 OFFSET $3
 	`

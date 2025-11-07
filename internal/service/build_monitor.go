@@ -144,7 +144,7 @@ func (m *BuildMonitor) watchLoop() {
 // startWatch K8s Job Watch 시작
 func (m *BuildMonitor) startWatch() error {
 	// 빌드 전용 레이블로 필터링
-	labelSelector := "app=kaniko-builder"
+	labelSelector := "app=rl-arena,type=agent-build"
 	
 	m.logger.Info("Starting K8s Job watch", zap.String("labelSelector", labelSelector))
 
@@ -327,13 +327,19 @@ func (m *BuildMonitor) handleBuildSuccess(ctx context.Context, submission *model
 		buildLog,
 		nil,
 	); err != nil {
-		m.logger.Error("Failed to update submission status to success",
-			zap.String("submissionId", submission.ID),
-			zap.Error(err))
-		return
-	}
+	m.logger.Error("Failed to update submission status to success",
+		zap.String("submissionId", submission.ID),
+		zap.Error(err))
+	return
+}
 
-	// WebSocket으로 실시간 알림 전송
+// 자동으로 active submission으로 설정
+if err := m.submissionRepo.SetActive(submission.ID, submission.AgentID); err != nil {
+	m.logger.Warn("Failed to set submission as active",
+		zap.String("submissionId", submission.ID),
+		zap.Error(err))
+	// 실패해도 계속 진행 (중요하지 않음)
+}	// WebSocket으로 실시간 알림 전송
 	if m.wsHub != nil {
 		imageURL := ""
 		if submission.DockerImageURL != nil {

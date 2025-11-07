@@ -3,6 +3,9 @@ package service
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/rl-arena/rl-arena-backend/internal/models"
@@ -12,6 +15,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 // BuilderService Kaniko를 사용하여 Docker 이미지 빌드
@@ -28,10 +32,29 @@ func NewBuilderService(
 	submissionRepo *repository.SubmissionRepository,
 	namespace, registryURL, registrySecret string,
 ) (*BuilderService, error) {
-	// K8s in-cluster 설정
-	config, err := rest.InClusterConfig()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get in-cluster config: %w", err)
+	var config *rest.Config
+	var err error
+
+	// 로컬 K8s 사용 여부 확인
+	useLocalK8s := os.Getenv("USE_LOCAL_K8S") == "true"
+
+	if useLocalK8s {
+		// 로컬 kubeconfig 사용 (Docker Desktop K8s)
+		kubeconfig := filepath.Join(os.Getenv("USERPROFILE"), ".kube", "config")
+		if os.Getenv("KUBECONFIG") != "" {
+			kubeconfig = os.Getenv("KUBECONFIG")
+		}
+
+		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
+		if err != nil {
+			return nil, fmt.Errorf("failed to build kubeconfig: %w", err)
+		}
+	} else {
+		// K8s in-cluster 설정 (프로덕션)
+		config, err = rest.InClusterConfig()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get in-cluster config: %w", err)
+		}
 	}
 
 	clientset, err := kubernetes.NewForConfig(config)
@@ -60,7 +83,7 @@ func (s *BuilderService) BuildAgentImage(ctx context.Context, submission *models
 
 	// Kaniko Job 생성
 	jobName := fmt.Sprintf("build-%s", submission.ID)
-	job := s.createKanikoJob(jobName, submission.CodeURL, imageTag)
+	job := s.createKanikoJob(jobName, submission.CodeURL, imageTag, submission.ID)
 
 	// Job 생성
 	createdJob, err := s.k8sClient.BatchV1().Jobs(s.namespace).Create(ctx, job, metav1.CreateOptions{})
@@ -83,17 +106,94 @@ func (s *BuilderService) BuildAgentImage(ctx context.Context, submission *models
 }
 
 // createKanikoJob Kaniko Job YAML 생성
-func (s *BuilderService) createKanikoJob(jobName, codeURL, imageTag string) *batchv1.Job {
+func (s *BuilderService) createKanikoJob(jobName, codeURL, imageTag, submissionID string) *batchv1.Job {
 	backoffLimit := int32(3)
 	ttlSecondsAfterFinished := int32(3600) // 1시간 후 자동 삭제
 
+	// URL 기반인지 로컬 파일인지 확인
+	isGitRepo := strings.HasPrefix(codeURL, "http://") || strings.HasPrefix(codeURL, "https://")
+	
+	var initContainers []corev1.Container
+	var volumes []corev1.Volume
+	
+	// Workspace volume (항상 필요)
+	volumes = append(volumes, corev1.Volume{
+		Name: "workspace",
+		VolumeSource: corev1.VolumeSource{
+			EmptyDir: &corev1.EmptyDirVolumeSource{},
+		},
+	})
+	
+	// Kaniko secret volume (항상 필요)
+	volumes = append(volumes, corev1.Volume{
+		Name: "kaniko-secret",
+		VolumeSource: corev1.VolumeSource{
+			Secret: &corev1.SecretVolumeSource{
+				SecretName: s.registrySecret,
+				Items: []corev1.KeyToPath{
+					{
+						Key:  ".dockerconfigjson",
+						Path: "config.json",
+					},
+				},
+			},
+		},
+	})
+	
+	if isGitRepo {
+		// Git 저장소에서 코드 clone
+		initContainers = append(initContainers, corev1.Container{
+			Name:  "git-clone",
+			Image: "alpine/git:latest",
+			Command: []string{
+				"sh", "-c",
+				fmt.Sprintf("git clone %s /workspace", codeURL),
+			},
+			VolumeMounts: []corev1.VolumeMount{
+				{
+					Name:      "workspace",
+					MountPath: "/workspace",
+				},
+			},
+		})
+	} else {
+		// 로컬 파일 경로 - ConfigMap 또는 간단한 echo로 생성
+		// TODO: 실제로는 hostPath나 PVC 사용 권장
+		initContainers = append(initContainers, corev1.Container{
+			Name:  "create-code",
+			Image: "busybox:latest",
+			Command: []string{
+				"sh", "-c",
+				`cat > /workspace/agent.py << 'EOF'
+# Placeholder agent code
+import gym
+env = gym.make('Pong-v0')
+EOF
+cat > /workspace/Dockerfile << 'EOF'
+FROM python:3.10-slim
+WORKDIR /app
+RUN pip install gymnasium[atari]
+COPY agent.py /app/
+CMD ["python", "agent.py"]
+EOF`,
+			},
+			VolumeMounts: []corev1.VolumeMount{
+				{
+					Name:      "workspace",
+					MountPath: "/workspace",
+				},
+			},
+		})
+	}
+	
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      jobName,
 			Namespace: s.namespace,
 			Labels: map[string]string{
-				"app":  "rl-arena",
-				"type": "agent-build",
+				"app":            "rl-arena",
+				"type":           "agent-build",
+				"submission-id":  submissionID,
 			},
 		},
 		Spec: batchv1.JobSpec{
@@ -108,23 +208,8 @@ func (s *BuilderService) createKanikoJob(jobName, codeURL, imageTag string) *bat
 					},
 				},
 				Spec: corev1.PodSpec{
-					RestartPolicy: corev1.RestartPolicyNever,
-					InitContainers: []corev1.Container{
-						{
-							Name:  "git-clone",
-							Image: "alpine/git:latest",
-							Command: []string{
-								"sh", "-c",
-								fmt.Sprintf("git clone %s /workspace", codeURL),
-							},
-							VolumeMounts: []corev1.VolumeMount{
-								{
-									Name:      "workspace",
-									MountPath: "/workspace",
-								},
-							},
-						},
-					},
+					RestartPolicy:  corev1.RestartPolicyNever,
+					InitContainers: initContainers,
 					Containers: []corev1.Container{
 						{
 							Name:  "kaniko",
@@ -133,6 +218,8 @@ func (s *BuilderService) createKanikoJob(jobName, codeURL, imageTag string) *bat
 								"--dockerfile=/workspace/Dockerfile",
 								"--context=/workspace",
 								fmt.Sprintf("--destination=%s", imageTag),
+								"--insecure",
+								"--skip-tls-verify",
 								"--cache=true",
 								"--cache-ttl=24h",
 							},
@@ -154,28 +241,7 @@ func (s *BuilderService) createKanikoJob(jobName, codeURL, imageTag string) *bat
 							},
 						},
 					},
-					Volumes: []corev1.Volume{
-						{
-							Name: "workspace",
-							VolumeSource: corev1.VolumeSource{
-								EmptyDir: &corev1.EmptyDirVolumeSource{},
-							},
-						},
-						{
-							Name: "kaniko-secret",
-							VolumeSource: corev1.VolumeSource{
-								Secret: &corev1.SecretVolumeSource{
-									SecretName: s.registrySecret,
-									Items: []corev1.KeyToPath{
-										{
-											Key:  ".dockerconfigjson",
-											Path: "config.json",
-										},
-									},
-								},
-							},
-						},
-					},
+					Volumes: volumes,
 				},
 			},
 		},

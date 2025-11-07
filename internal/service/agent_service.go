@@ -116,21 +116,8 @@ func (s *AgentService) GetLeaderboardWithType(environmentID, leaderboardType str
 		limit = 20
 	}
 
-	// leaderboardType 검증 (public, private, all)
-	var isPublic *bool
-	switch leaderboardType {
-	case "public":
-		publicVal := true
-		isPublic = &publicVal
-	case "private":
-		privateVal := false
-		isPublic = &privateVal
-	case "all", "":
-		// nil로 설정하여 필터링하지 않음
-		isPublic = nil
-	default:
-		return nil, fmt.Errorf("invalid leaderboard type: %s (must be 'public', 'private', or 'all')", leaderboardType)
-	}
+	// 참고: leaderboardType 파라미터는 향후 Public/Private 분리 기능을 위해 보존
+	// 현재는 active_submission_id가 있는 모든 agent를 표시
 
 	var agents []*models.Agent
 	var err error
@@ -139,8 +126,9 @@ func (s *AgentService) GetLeaderboardWithType(environmentID, leaderboardType str
 		// 전체 리더보드 - 기존 메서드 사용 (is_public 필터링 없음)
 		agents, err = s.agentRepo.FindAll(limit, 0)
 	} else {
-		// 특정 환경 리더보드 - Public/Private 분리
-		agents, err = s.agentRepo.FindByEnvironmentIDWithPublicity(environmentID, isPublic, limit, 0)
+		// 특정 환경 리더보드 - 매치 기록 없어도 active submission이 있으면 표시
+		// Public/Private 필터링은 일단 사용하지 않음 (matches 테이블 JOIN 불필요)
+		agents, err = s.agentRepo.FindByEnvironmentID(environmentID, limit, 0)
 	}
 
 	if err != nil {
