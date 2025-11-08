@@ -52,16 +52,18 @@ func (r *AgentRepository) Create(userID, name, description, environmentID string
 // FindByID ID로 에이전트 찾기
 func (r *AgentRepository) FindByID(id string) (*models.Agent, error) {
 	query := `
-		SELECT id, user_id, name, description, environment_id, elo, wins, losses, draws,
-		       total_matches, active_submission_id, created_at, updated_at
-		FROM agents
-		WHERE id = $1
+		SELECT a.id, a.user_id, u.username, a.name, a.description, a.environment_id, a.elo, a.wins, a.losses, a.draws,
+		       a.total_matches, a.active_submission_id, a.created_at, a.updated_at
+		FROM agents a
+		JOIN users u ON a.user_id = u.id
+		WHERE a.id = $1
 	`
 
 	agent := &models.Agent{}
 	err := r.db.QueryRow(query, id).Scan(
 		&agent.ID,
 		&agent.UserID,
+		&agent.Username,
 		&agent.Name,
 		&agent.Description,
 		&agent.EnvironmentID,
@@ -89,11 +91,12 @@ func (r *AgentRepository) FindByID(id string) (*models.Agent, error) {
 // FindByUserID 사용자의 모든 에이전트 조회
 func (r *AgentRepository) FindByUserID(userID string) ([]*models.Agent, error) {
 	query := `
-		SELECT id, user_id, name, description, environment_id, elo, wins, losses, draws,
-		       total_matches, active_submission_id, created_at, updated_at
-		FROM agents
-		WHERE user_id = $1
-		ORDER BY created_at DESC
+		SELECT a.id, a.user_id, u.username, a.name, a.description, a.environment_id, a.elo, a.wins, a.losses, a.draws,
+		       a.total_matches, a.active_submission_id, a.created_at, a.updated_at
+		FROM agents a
+		JOIN users u ON a.user_id = u.id
+		WHERE a.user_id = $1
+		ORDER BY a.created_at DESC
 	`
 
 	rows, err := r.db.Query(query, userID)
@@ -108,6 +111,7 @@ func (r *AgentRepository) FindByUserID(userID string) ([]*models.Agent, error) {
 		err := rows.Scan(
 			&agent.ID,
 			&agent.UserID,
+			&agent.Username,
 			&agent.Name,
 			&agent.Description,
 			&agent.EnvironmentID,
@@ -132,10 +136,11 @@ func (r *AgentRepository) FindByUserID(userID string) ([]*models.Agent, error) {
 // FindAll 모든 에이전트 조회 (페이지네이션)
 func (r *AgentRepository) FindAll(limit, offset int) ([]*models.Agent, error) {
 	query := `
-		SELECT id, user_id, name, description, environment_id, elo, wins, losses, draws,
-		       total_matches, active_submission_id, created_at, updated_at
-		FROM agents
-		ORDER BY elo DESC, created_at DESC
+		SELECT a.id, a.user_id, u.username, a.name, a.description, a.environment_id, a.elo, a.wins, a.losses, a.draws,
+		       a.total_matches, a.active_submission_id, a.created_at, a.updated_at
+		FROM agents a
+		JOIN users u ON a.user_id = u.id
+		ORDER BY a.elo DESC, a.created_at DESC
 		LIMIT $1 OFFSET $2
 	`
 
@@ -151,6 +156,7 @@ func (r *AgentRepository) FindAll(limit, offset int) ([]*models.Agent, error) {
 		err := rows.Scan(
 			&agent.ID,
 			&agent.UserID,
+			&agent.Username,
 			&agent.Name,
 			&agent.Description,
 			&agent.EnvironmentID,
@@ -175,11 +181,12 @@ func (r *AgentRepository) FindAll(limit, offset int) ([]*models.Agent, error) {
 // FindByEnvironmentID 특정 환경의 에이전트 조회 (리더보드용)
 func (r *AgentRepository) FindByEnvironmentID(environmentID string, limit, offset int) ([]*models.Agent, error) {
 	query := `
-		SELECT id, user_id, name, description, environment_id, elo, wins, losses, draws,
-		       total_matches, active_submission_id, created_at, updated_at
-		FROM agents
-		WHERE environment_id = $1 AND active_submission_id IS NOT NULL
-		ORDER BY elo DESC
+		SELECT a.id, a.user_id, u.username, a.name, a.description, a.environment_id, a.elo, a.wins, a.losses, a.draws,
+		       a.total_matches, a.active_submission_id, a.created_at, a.updated_at
+		FROM agents a
+		JOIN users u ON a.user_id = u.id
+		WHERE a.environment_id = $1 AND a.active_submission_id IS NOT NULL
+		ORDER BY a.elo DESC
 		LIMIT $2 OFFSET $3
 	`
 
@@ -195,6 +202,7 @@ func (r *AgentRepository) FindByEnvironmentID(environmentID string, limit, offse
 		err := rows.Scan(
 			&agent.ID,
 			&agent.UserID,
+			&agent.Username,
 			&agent.Name,
 			&agent.Description,
 			&agent.EnvironmentID,
@@ -303,7 +311,7 @@ func (r *AgentRepository) Update(id, name, description string) error {
 func (r *AgentRepository) UpdateStats(id string, eloChange int, won, lost, draw bool) error {
 	query := `
 		UPDATE agents
-		SET elo = elo + $1,
+		SET elo = GREATEST(0, elo + $1),
 		    wins = wins + $2,
 		    losses = losses + $3,
 		    draws = draws + $4,
@@ -429,4 +437,91 @@ func (r *AgentRepository) GetOpponentStats(agentID string) ([]*OpponentStats, er
 	}
 
 	return stats, nil
+}
+
+// CountByUserID 사용자의 모든 에이전트 개수 조회
+func (r *AgentRepository) CountByUserID(userID string) (int, error) {
+	query := `SELECT COUNT(*) FROM agents WHERE user_id = $1`
+
+	var count int
+	err := r.db.QueryRow(query, userID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count user agents: %w", err)
+	}
+
+	return count, nil
+}
+
+// CountActiveByUserID 사용자의 활성 에이전트 개수 조회
+func (r *AgentRepository) CountActiveByUserID(userID string) (int, error) {
+	query := `SELECT COUNT(*) FROM agents WHERE user_id = $1 AND active_submission_id IS NOT NULL`
+
+	var count int
+	err := r.db.QueryRow(query, userID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count active user agents: %w", err)
+	}
+
+	return count, nil
+}
+
+// GetUserMatchStats 사용자의 전체 매치 통계 조회
+func (r *AgentRepository) GetUserMatchStats(userID string) (totalMatches, totalWins int, err error) {
+	query := `
+		SELECT 
+			COUNT(*) as total_matches,
+			COUNT(*) FILTER (WHERE m.winner_id IN (SELECT id FROM agents WHERE user_id = $1)) as total_wins
+		FROM matches m
+		WHERE (m.agent1_id IN (SELECT id FROM agents WHERE user_id = $1) 
+			OR m.agent2_id IN (SELECT id FROM agents WHERE user_id = $1))
+			AND m.status = 'completed'
+	`
+
+	err = r.db.QueryRow(query, userID).Scan(&totalMatches, &totalWins)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to get user match stats: %w", err)
+	}
+
+	return totalMatches, totalWins, nil
+}
+
+// GetUserBestRank 사용자의 최고 순위 조회 (가장 높은 ELO를 가진 에이전트의 순위)
+func (r *AgentRepository) GetUserBestRank(userID string) (int, error) {
+	query := `
+		WITH ranked_agents AS (
+			SELECT 
+				id,
+				user_id,
+				RANK() OVER (ORDER BY elo DESC) as rank
+			FROM agents
+			WHERE active_submission_id IS NOT NULL
+		)
+		SELECT COALESCE(MIN(rank), 0)
+		FROM ranked_agents
+		WHERE user_id = $1
+	`
+
+	var rank int
+	err := r.db.QueryRow(query, userID).Scan(&rank)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get user best rank: %w", err)
+	}
+
+	return rank, nil
+}
+
+// ResetELO 에이전트의 ELO를 지정된 값으로 초기화 (새 제출 활성화 시)
+func (r *AgentRepository) ResetELO(agentID string, elo int) error {
+	query := `
+		UPDATE agents
+		SET elo = $1
+		WHERE id = $2
+	`
+
+	_, err := r.db.Exec(query, elo, agentID)
+	if err != nil {
+		return fmt.Errorf("failed to reset agent ELO: %w", err)
+	}
+
+	return nil
 }

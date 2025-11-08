@@ -51,7 +51,7 @@ func SetupRouter(cfg *config.Config, db *database.DB, redisLimiter *ratelimit.Re
 
 	// Service 초기화
 	eloService := service.NewELOService()
-	userService := service.NewUserService(userRepo)
+	userService := service.NewUserService(userRepo, agentRepo, submissionRepo)
 	agentService := service.NewAgentService(agentRepo)
 
 	// WebSocket Hub 초기화 및 시작
@@ -75,7 +75,11 @@ func SetupRouter(cfg *config.Config, db *database.DB, redisLimiter *ratelimit.Re
 	}
 
 	submissionService := service.NewSubmissionService(submissionRepo, agentRepo, storageManager, builderService)
-	matchService := service.NewMatchService(matchRepo, agentRepo, submissionRepo, eloService, executorClient)
+	
+	// Agent Match Stats Repository 초기화
+	statsRepo := repository.NewAgentMatchStatsRepository(db)
+	
+	matchService := service.NewMatchService(matchRepo, agentRepo, submissionRepo, statsRepo, eloService, executorClient)
 
 	// Matchmaking Service 초기화 및 시작
 	matchmakingRepo := repository.NewMatchmakingRepository(db)
@@ -86,6 +90,7 @@ func SetupRouter(cfg *config.Config, db *database.DB, redisLimiter *ratelimit.Re
 		matchmakingService = service.NewMatchmakingServiceWithRedis(
 			matchmakingRepo,
 			agentRepo,
+			statsRepo,
 			matchService,
 			30*time.Second, // 30초마다 매칭 트리거
 			redisLimiter.GetClient(), // Rate Limiter의 Redis 클라이언트 재사용
@@ -96,11 +101,15 @@ func SetupRouter(cfg *config.Config, db *database.DB, redisLimiter *ratelimit.Re
 		matchmakingService = service.NewMatchmakingService(
 			matchmakingRepo,
 			agentRepo,
+			statsRepo,
 			matchService,
 			30*time.Second,
 		)
 		println("MatchmakingService started (single-instance mode, 30s interval)")
 	}
+	
+	// MatchService에 MatchmakingService 연결 (매치 완료 후 재등록을 위해)
+	matchService.SetMatchmakingService(matchmakingService)
 	
 	matchmakingService.Start()
 

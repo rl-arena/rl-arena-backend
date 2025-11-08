@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -139,18 +140,29 @@ func (h *MatchHandler) GetMatchReplay(c *gin.Context) {
 	id := c.Param("id")
 	format := c.DefaultQuery("format", "json") // json or html
 
+	// ID 유효성 검사
+	if id == "" || id == "match_undefined" || id == "undefined" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "No match available yet. This agent hasn't played any matches.",
+			"message": "진행한 매치가 없습니다.",
+		})
+		return
+	}
+
 	// 매치 조회
 	match, err := h.matchService.GetByID(id)
 	if err != nil {
 		if errors.Is(err, service.ErrMatchNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{
 				"error": "Match not found",
+				"message": "매치를 찾을 수 없습니다.",
 			})
 			return
 		}
 
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to get match",
+			"message": "매치 정보를 가져오는데 실패했습니다.",
 		})
 		return
 	}
@@ -203,7 +215,34 @@ func (h *MatchHandler) GetMatchReplay(c *gin.Context) {
 		return
 	}
 
-	// 파일명 생성 (포맷에 맞게)
+	// For JSON format, return the content as JSON response (not download)
+	if format == "json" {
+		// Read JSON file
+		data, err := os.ReadFile(fullPath)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to read replay file",
+			})
+			return
+		}
+
+		// Parse and transform JSON for frontend compatibility
+		var executorReplay map[string]interface{}
+		if err := json.Unmarshal(data, &executorReplay); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to parse replay file",
+			})
+			return
+		}
+
+		// Transform executor format to frontend-compatible format
+		transformedReplay := transformExecutorReplayForFrontend(executorReplay)
+
+		c.JSON(http.StatusOK, transformedReplay)
+		return
+	}
+
+	// For HTML format, serve as downloadable file
 	filename := fmt.Sprintf("replay_%s.%s", match.ID, fileExtension)
 	
 	// Content-Disposition 헤더 설정 (다운로드)
@@ -223,18 +262,29 @@ func (h *MatchHandler) GetMatchReplayURL(c *gin.Context) {
 	id := c.Param("id")
 	format := c.DefaultQuery("format", "json") // json or html
 
+	// ID 유효성 검사
+	if id == "" || id == "match_undefined" || id == "undefined" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "No match available yet. This agent hasn't played any matches.",
+			"message": "진행한 매치가 없습니다.",
+		})
+		return
+	}
+
 	// 매치 조회
 	match, err := h.matchService.GetByID(id)
 	if err != nil {
 		if errors.Is(err, service.ErrMatchNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{
 				"error": "Match not found",
+				"message": "매치를 찾을 수 없습니다.",
 			})
 			return
 		}
 
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to get match",
+			"message": "매치 정보를 가져오는데 실패했습니다.",
 		})
 		return
 	}
@@ -308,4 +358,68 @@ func (h *MatchHandler) GetMatchesWithReplays(c *gin.Context) {
 		"page":     page,
 		"pageSize": pageSize,
 	})
+}
+
+// transformExecutorReplayForFrontend transforms executor replay format to frontend-compatible format
+func transformExecutorReplayForFrontend(executorReplay map[string]interface{}) map[string]interface{} {
+	frames, ok := executorReplay["frames"].([]interface{})
+	if !ok {
+		return executorReplay
+	}
+
+	transformedFrames := make([]interface{}, len(frames))
+	for i, frameData := range frames {
+		frame, ok := frameData.(map[string]interface{})
+		if !ok {
+			transformedFrames[i] = frameData
+			continue
+		}
+
+		// Create info object if it doesn't exist
+		info, ok := frame["info"].(map[string]interface{})
+		if !ok {
+			info = make(map[string]interface{})
+			frame["info"] = info
+		}
+
+		// Parse ball_pos: "0.5 0.5" -> [0.5, 0.5]
+		if ballPosStr, ok := info["ball_pos"].(string); ok {
+			var ballX, ballY float64
+			if n, _ := fmt.Sscanf(ballPosStr, "%f %f", &ballX, &ballY); n == 2 {
+				info["ball_pos"] = []float64{ballX, ballY}
+			}
+		}
+
+		// Parse paddle_positions: "0.5 0.5" -> [0.5, 0.5]
+		if paddlePosStr, ok := info["paddle_positions"].(string); ok {
+			var paddle1Y, paddle2Y float64
+			if n, _ := fmt.Sscanf(paddlePosStr, "%f %f", &paddle1Y, &paddle2Y); n == 2 {
+				info["paddle_positions"] = []float64{paddle1Y, paddle2Y}
+			}
+		}
+
+		// Parse scores: "4 9" -> [4, 9] or keep as array
+		// Frontend expects "score" key, backend has "scores"
+		if scoresStr, ok := info["scores"].(string); ok {
+			var score1, score2 int
+			if n, _ := fmt.Sscanf(scoresStr, "%d %d", &score1, &score2); n == 2 {
+				info["score"] = []int{score1, score2}
+				delete(info, "scores") // Remove old key
+			}
+		} else if scoresArr, ok := info["scores"].([]interface{}); ok {
+			// Already an array, just rename the key
+			info["score"] = scoresArr
+			delete(info, "scores")
+		}
+
+		transformedFrames[i] = frame
+	}
+
+	result := make(map[string]interface{})
+	for k, v := range executorReplay {
+		result[k] = v
+	}
+	result["frames"] = transformedFrames
+
+	return result
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/lib/pq"
 	"github.com/rl-arena/rl-arena-backend/internal/models"
 	"github.com/rl-arena/rl-arena-backend/pkg/database"
 )
@@ -89,20 +90,37 @@ func (r *MatchmakingRepository) MarkAsMatched(queueIDs ...string) error {
 		SET status = 'matched', matched_at = NOW()
 		WHERE id = ANY($1)
 	`
-	_, err := r.db.Exec(query, queueIDs)
+	_, err := r.db.Exec(query, pq.Array(queueIDs))
 	return err
 }
 
-// GetWaitingAgents 대기 중인 Agent 목록
-func (r *MatchmakingRepository) GetWaitingAgents(environmentID string) ([]models.MatchmakingQueue, error) {
+// GetWaitingAgents 대기 중인 Agent 목록 (현재 매치 진행 중이 아니고 rate limit을 통과한 에이전트만)
+// cooldownMinutes: 마지막 매치 후 최소 대기 시간 (분)
+// dailyLimit: 하루 최대 매치 횟수
+func (r *MatchmakingRepository) GetWaitingAgents(environmentID string, cooldownMinutes int, dailyLimit int) ([]models.MatchmakingQueue, error) {
 	query := `
-		SELECT id, agent_id, environment_id, elo_rating, priority, queued_at, status, matched_at
-		FROM matchmaking_queue
-		WHERE environment_id = $1 AND status = 'waiting'
-		ORDER BY priority DESC, queued_at ASC
+		SELECT mq.id, mq.agent_id, mq.environment_id, mq.elo_rating, mq.priority, mq.queued_at, mq.status, mq.matched_at
+		FROM matchmaking_queue mq
+		LEFT JOIN agent_match_stats ams ON mq.agent_id = ams.agent_id
+		WHERE mq.environment_id = $1 
+		  AND mq.status = 'waiting'
+		  AND NOT EXISTS (
+		    SELECT 1 FROM matches m
+		    WHERE m.status IN ('pending', 'running')
+		      AND (m.agent1_id = mq.agent_id OR m.agent2_id = mq.agent_id)
+		  )
+		  -- Cooldown check: last match must be older than cooldown period
+		  AND (ams.last_match_at IS NULL OR ams.last_match_at < NOW() - INTERVAL '1 minute' * $2)
+		  -- Daily limit check: reset if daily_reset_at has passed
+		  AND (
+		    ams.agent_id IS NULL OR 
+		    ams.daily_reset_at <= NOW() OR 
+		    ams.matches_today < $3
+		  )
+		ORDER BY mq.priority DESC, mq.queued_at ASC
 	`
 	
-	rows, err := r.db.Query(query, environmentID)
+	rows, err := r.db.Query(query, environmentID, cooldownMinutes, dailyLimit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get waiting agents: %w", err)
 	}

@@ -107,6 +107,18 @@ func (s *AgentService) GetLeaderboard(environmentID string, limit int) ([]*model
 		return nil, fmt.Errorf("failed to get leaderboard: %w", err)
 	}
 
+	// Rank 계산 및 설정 (ELO 기준으로 이미 정렬되어 있음)
+	rank := 1
+	for i, agent := range agents {
+		// 이전 에이전트와 ELO가 같으면 같은 랭크
+		if i > 0 && agents[i-1].ELO == agent.ELO {
+			agent.Rank = agents[i-1].Rank
+		} else {
+			agent.Rank = rank
+		}
+		rank++
+	}
+
 	return agents, nil
 }
 
@@ -133,6 +145,18 @@ func (s *AgentService) GetLeaderboardWithType(environmentID, leaderboardType str
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get leaderboard: %w", err)
+	}
+
+	// Rank 계산 및 설정 (ELO 기준으로 이미 정렬되어 있음)
+	rank := 1
+	for i, agent := range agents {
+		// 이전 에이전트와 ELO가 같으면 같은 랭크
+		if i > 0 && agents[i-1].ELO == agent.ELO {
+			agent.Rank = agents[i-1].Rank
+		} else {
+			agent.Rank = rank
+		}
+		rank++
 	}
 
 	return agents, nil

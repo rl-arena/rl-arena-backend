@@ -223,6 +223,13 @@ func (m *BuildMonitor) handleWatchEvent(event watch_api.Event) {
 		return
 	}
 
+	// Submission이 없으면 스킵
+	if submission == nil {
+		m.logger.Warn("Submission not found",
+			zap.String("submissionId", submissionID))
+		return
+	}
+
 	// 이미 처리된 상태면 스킵
 	if submission.Status != models.SubmissionStatusBuilding {
 		return
@@ -320,14 +327,14 @@ func (m *BuildMonitor) handleBuildSuccess(ctx context.Context, submission *model
 		}
 	}
 
-	// Submission 상태를 'success'로 업데이트
+	// Submission 상태를 'active'로 업데이트 (빌드 성공 시 즉시 활성화)
 	if err := m.submissionRepo.UpdateStatus(
 		submission.ID,
-		models.SubmissionStatusSuccess,
+		models.SubmissionStatusActive,
 		buildLog,
 		nil,
 	); err != nil {
-	m.logger.Error("Failed to update submission status to success",
+	m.logger.Error("Failed to update submission status to active",
 		zap.String("submissionId", submission.ID),
 		zap.Error(err))
 	return
@@ -348,7 +355,7 @@ if err := m.submissionRepo.SetActive(submission.ID, submission.AgentID); err != 
 		m.wsHub.SendBuildStatus(
 			submission.AgentID,
 			submission.ID,
-			string(models.SubmissionStatusSuccess),
+			string(models.SubmissionStatusActive),
 			"Build completed successfully",
 			imageURL,
 		)

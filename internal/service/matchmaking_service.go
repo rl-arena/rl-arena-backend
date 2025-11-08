@@ -16,6 +16,7 @@ import (
 type MatchmakingService struct {
 	matchmakingRepo *repository.MatchmakingRepository
 	agentRepo       *repository.AgentRepository
+	statsRepo       *repository.AgentMatchStatsRepository
 	matchService    *MatchService
 	logger          *zap.Logger
 	interval        time.Duration
@@ -26,6 +27,9 @@ type MatchmakingService struct {
 	running         bool
 	mu              sync.Mutex
 	
+	// Rate limiting configuration
+	rateLimitConfig models.MatchRateLimitConfig
+	
 	// Redis 분산 처리
 	coordinator     *distributed.MatchmakingCoordinator
 	useDistributed  bool
@@ -34,6 +38,7 @@ type MatchmakingService struct {
 func NewMatchmakingService(
 	matchmakingRepo *repository.MatchmakingRepository,
 	agentRepo *repository.AgentRepository,
+	statsRepo *repository.AgentMatchStatsRepository,
 	matchService *MatchService,
 	interval time.Duration,
 ) *MatchmakingService {
@@ -42,12 +47,14 @@ func NewMatchmakingService(
 	return &MatchmakingService{
 		matchmakingRepo: matchmakingRepo,
 		agentRepo:       agentRepo,
+		statsRepo:       statsRepo,
 		matchService:    matchService,
 		logger:          logger,
 		interval:        interval,
 		eloRange:        100,
 		maxEloRange:     500,
 		stopChan:        make(chan struct{}),
+		rateLimitConfig: models.DefaultMatchRateLimitConfig(),
 		useDistributed:  false, // 기본값은 단일 고루틴 모드
 	}
 }
@@ -56,6 +63,7 @@ func NewMatchmakingService(
 func NewMatchmakingServiceWithRedis(
 	matchmakingRepo *repository.MatchmakingRepository,
 	agentRepo *repository.AgentRepository,
+	statsRepo *repository.AgentMatchStatsRepository,
 	matchService *MatchService,
 	interval time.Duration,
 	redisClient *redis.Client,
@@ -67,12 +75,14 @@ func NewMatchmakingServiceWithRedis(
 	return &MatchmakingService{
 		matchmakingRepo: matchmakingRepo,
 		agentRepo:       agentRepo,
+		statsRepo:       statsRepo,
 		matchService:    matchService,
 		logger:          logger,
 		interval:        interval,
 		eloRange:        100,
 		maxEloRange:     500,
 		stopChan:        make(chan struct{}),
+		rateLimitConfig: models.DefaultMatchRateLimitConfig(),
 		coordinator:     coordinator,
 		useDistributed:  true, // 분산 모드 활성화
 	}
@@ -226,9 +236,13 @@ func (s *MatchmakingService) runMatchmaking() {
 	s.matchEnvironment(ctx, "pong")
 }
 
-// matchEnvironment 특정 환경에서 매칭
+// matchEnvironment 특정 환경에서 매칭 (rate limit 적용)
 func (s *MatchmakingService) matchEnvironment(ctx context.Context, environmentName string) {
-	waiting, err := s.matchmakingRepo.GetWaitingAgents(environmentName)
+	// Rate limit 설정 (분 단위, 일일 한도)
+	cooldownMinutes := int(s.rateLimitConfig.MatchCooldown.Minutes())
+	dailyLimit := s.rateLimitConfig.DailyMatchLimit
+	
+	waiting, err := s.matchmakingRepo.GetWaitingAgents(environmentName, cooldownMinutes, dailyLimit)
 	if err != nil {
 		s.logger.Error("Failed to get waiting agents", zap.Error(err))
 		return
@@ -238,14 +252,18 @@ func (s *MatchmakingService) matchEnvironment(ctx context.Context, environmentNa
 		if len(waiting) > 0 {
 			s.logger.Debug("Not enough agents for matching", 
 				zap.String("env", environmentName),
-				zap.Int("count", len(waiting)))
+				zap.Int("count", len(waiting)),
+				zap.Int("cooldown_minutes", cooldownMinutes),
+				zap.Int("daily_limit", dailyLimit))
 		}
 		return
 	}
 
 	s.logger.Info("Starting matchmaking", 
 		zap.String("env", environmentName),
-		zap.Int("waiting", len(waiting)))
+		zap.Int("waiting", len(waiting)),
+		zap.Int("cooldown_minutes", cooldownMinutes),
+		zap.Int("daily_limit", dailyLimit))
 
 	matched := 0
 	processed := make(map[string]bool)
@@ -322,15 +340,17 @@ func (s *MatchmakingService) createMatch(ctx context.Context, queue1, queue2 *mo
 		return fmt.Errorf("failed to find agent2: %w", err)
 	}
 
-	// Match 생성 및 실행
+	// Match 생성 및 실행 (이 안에서 완료 후 자동으로 re-enqueue됨)
+	// Note: MarkAsMatched를 호출하지 않습니다. 대신 GetWaitingAgents에서
+	// 현재 진행 중인 매치(pending/running)의 에이전트를 자동으로 제외합니다.
 	match, err := s.matchService.CreateAndExecute(agent1.ID, agent2.ID)
 	if err != nil {
 		return fmt.Errorf("failed to create and execute match: %w", err)
 	}
 
-	// 큐에서 제거
-	if err := s.matchmakingRepo.MarkAsMatched(queue1.ID, queue2.ID); err != nil {
-		s.logger.Error("Failed to mark as matched", zap.Error(err))
+	// match가 nil인지 확인
+	if match == nil {
+		return fmt.Errorf("match creation returned nil")
 	}
 
 	// 매칭 기록

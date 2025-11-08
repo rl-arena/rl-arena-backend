@@ -8,12 +8,16 @@ import (
 )
 
 type UserService struct {
-	userRepo *repository.UserRepository
+	userRepo       *repository.UserRepository
+	agentRepo      *repository.AgentRepository
+	submissionRepo *repository.SubmissionRepository
 }
 
-func NewUserService(userRepo *repository.UserRepository) *UserService {
+func NewUserService(userRepo *repository.UserRepository, agentRepo *repository.AgentRepository, submissionRepo *repository.SubmissionRepository) *UserService {
 	return &UserService{
-		userRepo: userRepo,
+		userRepo:       userRepo,
+		agentRepo:      agentRepo,
+		submissionRepo: submissionRepo,
 	}
 }
 
@@ -117,4 +121,48 @@ func (s *UserService) Delete(id string) error {
 	}
 
 	return nil
+}
+
+// UserStats 사용자 통계
+type UserStats struct {
+	TotalSubmissions int `json:"totalSubmissions"`
+	ActiveAgents     int `json:"activeAgents"`
+	TotalMatches     int `json:"totalMatches"`
+	TotalWins        int `json:"totalWins"`
+	BestRank         int `json:"bestRank"`
+}
+
+// GetUserStats 사용자 통계 조회
+func (s *UserService) GetUserStats(userID string) (*UserStats, error) {
+	// 제출 개수
+	totalSubmissions, err := s.submissionRepo.CountByUserID(userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count submissions: %w", err)
+	}
+
+	// 활성 에이전트 개수
+	activeAgents, err := s.agentRepo.CountActiveByUserID(userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count active agents: %w", err)
+	}
+
+	// 매치 통계
+	totalMatches, totalWins, err := s.agentRepo.GetUserMatchStats(userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get match stats: %w", err)
+	}
+
+	// 최고 순위
+	bestRank, err := s.agentRepo.GetUserBestRank(userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get best rank: %w", err)
+	}
+
+	return &UserStats{
+		TotalSubmissions: totalSubmissions,
+		ActiveAgents:     activeAgents,
+		TotalMatches:     totalMatches,
+		TotalWins:        totalWins,
+		BestRank:         bestRank,
+	}, nil
 }

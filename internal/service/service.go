@@ -126,6 +126,18 @@ func (s *SubmissionService) Create(agentID, userID string, file *multipart.FileH
 				return
 			}
 			
+			// Build 정보 데이터베이스에 저장
+			if err := s.submissionRepo.UpdateBuildInfo(
+				submission.ID,
+				submission.BuildJobName,
+				submission.DockerImageURL,
+				submission.BuildPodName,
+			); err != nil {
+				s.logger.Error("Failed to update build info",
+					zap.String("submissionId", submission.ID),
+					zap.Error(err))
+			}
+			
 			s.logger.Info("Docker image build completed",
 				zap.String("submissionId", submission.ID))
 		}()
@@ -199,6 +211,18 @@ func (s *SubmissionService) CreateFromURL(agentID, userID, codeURL string) (*mod
 				return
 			}
 			
+			// Build 정보 데이터베이스에 저장
+			if err := s.submissionRepo.UpdateBuildInfo(
+				submission.ID,
+				submission.BuildJobName,
+				submission.DockerImageURL,
+				submission.BuildPodName,
+			); err != nil {
+				s.logger.Error("Failed to update build info",
+					zap.String("submissionId", submission.ID),
+					zap.Error(err))
+			}
+			
 			s.logger.Info("Docker image build job created successfully",
 				zap.String("submissionId", submission.ID),
 				zap.Stringp("jobName", submission.BuildJobName),
@@ -255,7 +279,7 @@ func (s *SubmissionService) SetActive(submissionID, userID string) error {
 		return ErrUnauthorized
 	}
 
-	// 활성화
+	// 활성화 (ELO는 유지)
 	err = s.submissionRepo.SetActive(submissionID, submission.AgentID)
 	if err != nil {
 		return fmt.Errorf("failed to activate submission: %w", err)
@@ -355,6 +379,19 @@ func (s *SubmissionService) RebuildSubmission(submissionID, userID string) error
 			if err := s.builderService.BuildAgentImage(ctx, updatedSubmission); err != nil {
 				s.logger.Error("Failed to rebuild Docker image",
 					zap.String("submissionId", submissionID),
+					zap.Error(err))
+				return
+			}
+			
+			// Build 정보 데이터베이스에 저장
+			if err := s.submissionRepo.UpdateBuildInfo(
+				updatedSubmission.ID,
+				updatedSubmission.BuildJobName,
+				updatedSubmission.DockerImageURL,
+				updatedSubmission.BuildPodName,
+			); err != nil {
+				s.logger.Error("Failed to update build info",
+					zap.String("submissionId", updatedSubmission.ID),
 					zap.Error(err))
 			}
 		}()

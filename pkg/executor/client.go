@@ -70,14 +70,15 @@ type AgentInfo struct {
 
 // ExecuteMatchResponse Executor로부터 받는 응답 (레거시 호환용)
 type ExecuteMatchResponse struct {
-	MatchID     string  `json:"matchId"`
-	Status      string  `json:"status"` // "success", "error", "timeout"
-	WinnerID    *string `json:"winnerId,omitempty"`
-	Agent1Score float64 `json:"agent1Score"`
-	Agent2Score float64 `json:"agent2Score"`
-	ReplayURL   string  `json:"replayUrl,omitempty"`
-	Duration    int64   `json:"duration"` // milliseconds
-	ErrorMsg    string  `json:"error,omitempty"`
+	MatchID       string  `json:"matchId"`
+	Status        string  `json:"status"` // "success", "error", "timeout"
+	WinnerID      *string `json:"winnerId,omitempty"`
+	Agent1Score   float64 `json:"agent1Score"`
+	Agent2Score   float64 `json:"agent2Score"`
+	ReplayURL     string  `json:"replayUrl,omitempty"`
+	ReplayHTMLURL string  `json:"replayHtmlUrl,omitempty"`
+	Duration      int64   `json:"duration"` // milliseconds
+	ErrorMsg      string  `json:"error,omitempty"`
 }
 
 // ExecuteMatch 게임 실행 요청 (gRPC)
@@ -129,11 +130,12 @@ func (c *Client) ExecuteMatch(req ExecuteMatchRequest) (*ExecuteMatchResponse, e
 
 	// proto MatchResponse를 ExecuteMatchResponse로 변환
 	result := &ExecuteMatchResponse{
-		MatchID:  resp.MatchId,
-		Status:   convertStatus(resp.Status),
-		ReplayURL: resp.ReplayUrl,
-		Duration: int64(resp.ExecutionTimeSec * 1000), // seconds to milliseconds
-		ErrorMsg: resp.ErrorMessage,
+		MatchID:       resp.MatchId,
+		Status:        convertStatus(resp.Status),
+		ReplayURL:     resp.ReplayUrl,
+		ReplayHTMLURL: resp.ReplayHtmlUrl,
+		Duration:      int64(resp.ExecutionTimeSec * 1000), // seconds to milliseconds
+		ErrorMsg:      resp.ErrorMessage,
 	}
 
 	// Winner ID 설정

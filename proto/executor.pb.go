@@ -238,10 +238,11 @@ type MatchResponse struct {
 	Status           MatchStatus            `protobuf:"varint,2,opt,name=status,proto3,enum=executor.MatchStatus" json:"status,omitempty"`                      // Match status
 	WinnerAgentId    string                 `protobuf:"bytes,3,opt,name=winner_agent_id,json=winnerAgentId,proto3" json:"winner_agent_id,omitempty"`            // Winner agent ID (empty if draw)
 	AgentResults     []*AgentResult         `protobuf:"bytes,4,rep,name=agent_results,json=agentResults,proto3" json:"agent_results,omitempty"`                 // Results for each agent
-	ReplayUrl        string                 `protobuf:"bytes,5,opt,name=replay_url,json=replayUrl,proto3" json:"replay_url,omitempty"`                          // URL to replay file (if recorded)
+	ReplayUrl        string                 `protobuf:"bytes,5,opt,name=replay_url,json=replayUrl,proto3" json:"replay_url,omitempty"`                          // URL to replay JSON file (if recorded)
 	ErrorMessage     string                 `protobuf:"bytes,6,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`                 // Error message if failed
 	TotalSteps       uint32                 `protobuf:"varint,7,opt,name=total_steps,json=totalSteps,proto3" json:"total_steps,omitempty"`                      // Total steps executed
 	ExecutionTimeSec float64                `protobuf:"fixed64,8,opt,name=execution_time_sec,json=executionTimeSec,proto3" json:"execution_time_sec,omitempty"` // Actual execution time
+	ReplayHtmlUrl    string                 `protobuf:"bytes,9,opt,name=replay_html_url,json=replayHtmlUrl,proto3" json:"replay_html_url,omitempty"`            // URL to replay HTML file (if recorded)
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -330,6 +331,13 @@ func (x *MatchResponse) GetExecutionTimeSec() float64 {
 		return x.ExecutionTimeSec
 	}
 	return 0
+}
+
+func (x *MatchResponse) GetReplayHtmlUrl() string {
+	if x != nil {
+		return x.ReplayHtmlUrl
+	}
+	return ""
 }
 
 // Result for individual agent
@@ -641,7 +649,7 @@ const file_proto_executor_proto_rawDesc = "" +
 	"\bmetadata\x18\x04 \x03(\v2!.executor.AgentData.MetadataEntryR\bmetadata\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xd0\x02\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xf8\x02\n" +
 	"\rMatchResponse\x12\x19\n" +
 	"\bmatch_id\x18\x01 \x01(\tR\amatchId\x12-\n" +
 	"\x06status\x18\x02 \x01(\x0e2\x15.executor.MatchStatusR\x06status\x12&\n" +
@@ -652,7 +660,8 @@ const file_proto_executor_proto_rawDesc = "" +
 	"\rerror_message\x18\x06 \x01(\tR\ferrorMessage\x12\x1f\n" +
 	"\vtotal_steps\x18\a \x01(\rR\n" +
 	"totalSteps\x12,\n" +
-	"\x12execution_time_sec\x18\b \x01(\x01R\x10executionTimeSec\"{\n" +
+	"\x12execution_time_sec\x18\b \x01(\x01R\x10executionTimeSec\x12&\n" +
+	"\x0freplay_html_url\x18\t \x01(\tR\rreplayHtmlUrl\"{\n" +
 	"\vAgentResult\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x14\n" +
 	"\x05score\x18\x02 \x01(\x01R\x05score\x12\x16\n" +

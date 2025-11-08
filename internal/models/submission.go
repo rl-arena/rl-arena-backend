@@ -17,6 +17,7 @@ const (
 type Submission struct {
 	ID            string           `json:"id" db:"id"`
 	AgentID       string           `json:"agentId" db:"agent_id"`
+	AgentName     string           `json:"agentName" db:"agent_name"` // Agent name for display
 	EnvironmentID *string          `json:"environmentId,omitempty" db:"environment_id"`
 	Version       int              `json:"version" db:"version"`
 	Status        SubmissionStatus `json:"status" db:"status"`
