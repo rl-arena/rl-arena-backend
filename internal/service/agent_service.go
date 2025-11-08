@@ -1,17 +1,10 @@
 package service
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/rl-arena/rl-arena-backend/internal/models"
 	"github.com/rl-arena/rl-arena-backend/internal/repository"
-)
-
-var (
-	ErrAgentNotFound      = errors.New("agent not found")
-	ErrUnauthorized       = errors.New("unauthorized")
-	ErrInvalidEnvironment = errors.New("invalid environment")
 )
 
 type AgentService struct {
@@ -114,6 +107,58 @@ func (s *AgentService) GetLeaderboard(environmentID string, limit int) ([]*model
 		return nil, fmt.Errorf("failed to get leaderboard: %w", err)
 	}
 
+	// Rank 계산 및 설정 (ELO 기준으로 이미 정렬되어 있음)
+	rank := 1
+	for i, agent := range agents {
+		// 이전 에이전트와 ELO가 같으면 같은 랭크
+		if i > 0 && agents[i-1].ELO == agent.ELO {
+			agent.Rank = agents[i-1].Rank
+		} else {
+			agent.Rank = rank
+		}
+		rank++
+	}
+
+	return agents, nil
+}
+
+// GetLeaderboardWithType Public/Private 리더보드 조회
+func (s *AgentService) GetLeaderboardWithType(environmentID, leaderboardType string, limit int) ([]*models.Agent, error) {
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
+
+	// 참고: leaderboardType 파라미터는 향후 Public/Private 분리 기능을 위해 보존
+	// 현재는 active_submission_id가 있는 모든 agent를 표시
+
+	var agents []*models.Agent
+	var err error
+
+	if environmentID == "" {
+		// 전체 리더보드 - 기존 메서드 사용 (is_public 필터링 없음)
+		agents, err = s.agentRepo.FindAll(limit, 0)
+	} else {
+		// 특정 환경 리더보드 - 매치 기록 없어도 active submission이 있으면 표시
+		// Public/Private 필터링은 일단 사용하지 않음 (matches 테이블 JOIN 불필요)
+		agents, err = s.agentRepo.FindByEnvironmentID(environmentID, limit, 0)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get leaderboard: %w", err)
+	}
+
+	// Rank 계산 및 설정 (ELO 기준으로 이미 정렬되어 있음)
+	rank := 1
+	for i, agent := range agents {
+		// 이전 에이전트와 ELO가 같으면 같은 랭크
+		if i > 0 && agents[i-1].ELO == agent.ELO {
+			agent.Rank = agents[i-1].Rank
+		} else {
+			agent.Rank = rank
+		}
+		rank++
+	}
+
 	return agents, nil
 }
 
@@ -165,6 +210,26 @@ func (s *AgentService) Delete(id, userID string) error {
 	}
 
 	return nil
+}
+
+// GetOpponentStats 에이전트의 상대별 전적 통계 조회
+func (s *AgentService) GetOpponentStats(agentID string) ([]*repository.OpponentStats, error) {
+	// 에이전트 존재 확인
+	agent, err := s.agentRepo.FindByID(agentID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find agent: %w", err)
+	}
+	if agent == nil {
+		return nil, ErrAgentNotFound
+	}
+
+	// 상대별 전적 조회
+	stats, err := s.agentRepo.GetOpponentStats(agentID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get opponent stats: %w", err)
+	}
+
+	return stats, nil
 }
 
 //

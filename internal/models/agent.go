@@ -1,10 +1,14 @@
 package models
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type Agent struct {
 	ID                 string    `json:"id" db:"id"`
 	UserID             string    `json:"userId" db:"user_id"`
+	Username           string    `json:"username" db:"username"` // User's username for leaderboard display
 	Name               string    `json:"name" db:"name"`
 	Description        string    `json:"description" db:"description"`
 	EnvironmentID      string    `json:"environmentId" db:"environment_id"`
@@ -16,6 +20,24 @@ type Agent struct {
 	ActiveSubmissionID *string   `json:"activeSubmissionId,omitempty" db:"active_submission_id"`
 	CreatedAt          time.Time `json:"createdAt" db:"created_at"`
 	UpdatedAt          time.Time `json:"updatedAt" db:"updated_at"`
+	Rank               int       `json:"rank" db:"-"` // Rank is computed, not stored in DB
+}
+
+// GetScore returns the score (alias for ELO) for frontend compatibility
+func (a *Agent) GetScore() int {
+	return a.ELO
+}
+
+// MarshalJSON customizes JSON serialization to include score field
+func (a *Agent) MarshalJSON() ([]byte, error) {
+	type Alias Agent
+	return json.Marshal(&struct {
+		Score int `json:"score"`
+		*Alias
+	}{
+		Score: a.ELO,
+		Alias: (*Alias)(a),
+	})
 }
 
 type CreateAgentRequest struct {

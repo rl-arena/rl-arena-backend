@@ -127,14 +127,120 @@ func (h *SubmissionHandler) SetActiveSubmission(c *gin.Context) {
 	})
 }
 
+// GetBuildStatus 빌드 상태 조회
+func (h *SubmissionHandler) GetBuildStatus(c *gin.Context) {
+	id := c.Param("id")
+
+	submission, err := h.submissionService.GetByID(id)
+	if err != nil {
+		if errors.Is(err, service.ErrSubmissionNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Submission not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get submission"})
+		return
+	}
+
+	response := gin.H{
+		"submissionId": submission.ID,
+		"status":       submission.Status,
+		"createdAt":    submission.CreatedAt,
+		"updatedAt":    submission.UpdatedAt,
+	}
+
+	// 빌드 관련 정보 추가
+	if submission.BuildJobName != nil {
+		response["buildJobName"] = *submission.BuildJobName
+	}
+	if submission.BuildPodName != nil {
+		response["buildPodName"] = *submission.BuildPodName
+	}
+	if submission.DockerImageURL != nil {
+		response["dockerImageUrl"] = *submission.DockerImageURL
+	}
+	if submission.ErrorMessage != nil {
+		response["errorMessage"] = *submission.ErrorMessage
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+// GetBuildLogs 빌드 로그 조회
+func (h *SubmissionHandler) GetBuildLogs(c *gin.Context) {
+	id := c.Param("id")
+
+	submission, err := h.submissionService.GetByID(id)
+	if err != nil {
+		if errors.Is(err, service.ErrSubmissionNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Submission not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get submission"})
+		return
+	}
+
+	// 빌드 로그가 없으면 404
+	if submission.BuildLog == nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error":   "Build logs not available",
+			"message": "Logs may not be available yet or build has not started",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"submissionId": submission.ID,
+		"status":       submission.Status,
+		"buildLog":     *submission.BuildLog,
+		"updatedAt":    submission.UpdatedAt,
+	})
+}
+
+// RebuildSubmission 제출 재빌드
+func (h *SubmissionHandler) RebuildSubmission(c *gin.Context) {
+	userId, _ := c.Get("userId")
+	submissionId := c.Param("id")
+
+	if submissionId == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "submission ID is required",
+		})
+		return
+	}
+
+	err := h.submissionService.RebuildSubmission(submissionId, userId.(string))
+	if err != nil {
+		if errors.Is(err, service.ErrMaxRetriesExceeded) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "Maximum retry count exceeded",
+				"message": "This submission has already been retried 3 times",
+			})
+			return
+		}
+		h.handleError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Submission rebuild initiated successfully",
+	})
+}
+
 // handleError 에러 처리 헬퍼
 func (h *SubmissionHandler) handleError(c *gin.Context, err error) {
 	if errors.Is(err, service.ErrAgentNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Agent not found"})
+	} else if errors.Is(err, service.ErrSubmissionNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Submission not found"})
 	} else if errors.Is(err, service.ErrUnauthorized) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Unauthorized"})
 	} else if errors.Is(err, service.ErrInvalidFile) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid file"})
+	} else if errors.Is(err, service.ErrDailyQuotaExceeded) {
+		c.JSON(http.StatusTooManyRequests, gin.H{
+			"error":   "Daily submission quota exceeded",
+			"message": "You can only submit 5 times per day. Please try again tomorrow.",
+		})
 	} else {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
 	}

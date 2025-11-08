@@ -45,6 +45,15 @@ func (h *UserHandler) GetCurrentUser(c *gin.Context) {
 		return
 	}
 
+	// 사용자 통계 조회
+	stats, err := h.userService.GetUserStats(userId.(string))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to get user stats",
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"user": gin.H{
 			"id":        user.ID,
@@ -55,6 +64,7 @@ func (h *UserHandler) GetCurrentUser(c *gin.Context) {
 			"createdAt": user.CreatedAt,
 			"updatedAt": user.UpdatedAt,
 		},
+		"stats": stats,
 	})
 }
 

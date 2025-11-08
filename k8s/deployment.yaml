@@ -1,0 +1,129 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rl-arena-backend
+  namespace: rl-arena
+  labels:
+    app: rl-arena-backend
+    component: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: rl-arena-backend
+  template:
+    metadata:
+      labels:
+        app: rl-arena-backend
+        component: backend
+    spec:
+      containers:
+      - name: backend
+        image: your-registry/rl-arena-backend:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        # ConfigMap에서 환경 변수 주입
+        - name: PORT
+          valueFrom:
+            configMapKeyRef:
+              name: backend-config
+              key: PORT
+        - name: ENV
+          valueFrom:
+            configMapKeyRef:
+              name: backend-config
+              key: ENV
+        - name: CORS_ALLOWED_ORIGINS
+          valueFrom:
+            configMapKeyRef:
+              name: backend-config
+              key: CORS_ALLOWED_ORIGINS
+        - name: MATCHMAKING_INTERVAL
+          valueFrom:
+            configMapKeyRef:
+              name: backend-config
+              key: MATCHMAKING_INTERVAL
+        - name: MAX_ELO_DIFFERENCE
+          valueFrom:
+            configMapKeyRef:
+              name: backend-config
+              key: MAX_ELO_DIFFERENCE
+        - name: EXECUTOR_GRPC_URL
+          valueFrom:
+            configMapKeyRef:
+              name: backend-config
+              key: EXECUTOR_GRPC_URL
+        - name: K8S_NAMESPACE
+          valueFrom:
+            configMapKeyRef:
+              name: backend-config
+              key: K8S_NAMESPACE
+        - name: USE_K8S
+          valueFrom:
+            configMapKeyRef:
+              name: backend-config
+              key: USE_K8S
+        - name: CONTAINER_REGISTRY
+          valueFrom:
+            configMapKeyRef:
+              name: backend-config
+              key: CONTAINER_REGISTRY
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: backend-config
+              key: LOG_LEVEL
+        - name: TZ
+          valueFrom:
+            configMapKeyRef:
+              name: backend-config
+              key: TZ
+        # Secret에서 민감한 정보 주입
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: backend-secret
+              key: DATABASE_URL
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: backend-secret
+              key: REDIS_URL
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: backend-secret
+              key: JWT_SECRET
+        - name: JWT_EXPIRATION
+          valueFrom:
+            secretKeyRef:
+              name: backend-secret
+              key: JWT_EXPIRATION
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+      restartPolicy: Always

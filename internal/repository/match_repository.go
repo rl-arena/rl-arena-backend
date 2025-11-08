@@ -48,6 +48,7 @@ func (r *MatchRepository) UpdateResult(
 	agent1Score, agent2Score float64,
 	agent1ELOChange, agent2ELOChange int,
 	replayURL string,
+	replayHTMLURL string,
 ) error {
 	query := `
 		UPDATE matches
@@ -58,8 +59,9 @@ func (r *MatchRepository) UpdateResult(
 		    agent1_elo_change = $4,
 		    agent2_elo_change = $5,
 		    replay_url = $6,
+		    replay_html_url = $7,
 		    completed_at = NOW()
-		WHERE id = $7
+		WHERE id = $8
 	`
 
 	_, err := r.db.Exec(query,
@@ -69,6 +71,7 @@ func (r *MatchRepository) UpdateResult(
 		agent1ELOChange,
 		agent2ELOChange,
 		replayURL,
+		replayHTMLURL,
 		matchID,
 	)
 
@@ -85,7 +88,7 @@ func (r *MatchRepository) FindByID(id string) (*models.Match, error) {
 		SELECT id, environment_id, agent1_id, agent2_id, status,
 		       winner_id, agent1_score, agent2_score,
 		       agent1_elo_change, agent2_elo_change,
-		       replay_url, error_message,
+		       replay_url, replay_html_url, error_message,
 		       started_at, completed_at, created_at
 		FROM matches
 		WHERE id = $1
@@ -104,6 +107,7 @@ func (r *MatchRepository) FindByID(id string) (*models.Match, error) {
 		&match.Agent1ELOChange,
 		&match.Agent2ELOChange,
 		&match.ReplayURL,
+		&match.ReplayHTMLURL,
 		&match.ErrorMessage,
 		&match.StartedAt,
 		&match.CompletedAt,
@@ -127,9 +131,9 @@ func (r *MatchRepository) FindByAgentID(agentID string, limit, offset int) ([]*m
 		SELECT id, environment_id, agent1_id, agent2_id, status,
 		       winner_id, agent1_score, agent2_score,
 		       agent1_elo_change, agent2_elo_change,
-		       replay_url, created_at
+		       replay_url, replay_html_url, created_at
 		FROM matches
-		WHERE agent1_id = $1 OR agent2_id = $1
+		WHERE (agent1_id = $1 OR agent2_id = $1) AND status = 'completed'
 		ORDER BY created_at DESC
 		LIMIT $2 OFFSET $3
 	`
@@ -155,6 +159,7 @@ func (r *MatchRepository) FindByAgentID(agentID string, limit, offset int) ([]*m
 			&match.Agent1ELOChange,
 			&match.Agent2ELOChange,
 			&match.ReplayURL,
+			&match.ReplayHTMLURL,
 			&match.CreatedAt,
 		)
 		if err != nil {

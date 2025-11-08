@@ -481,6 +481,97 @@ Get all matches for a specific agent.
 }
 ```
 
+#### GET /matches/:id/replay
+Download the replay file for a specific match.
+
+**Query Parameters:**
+- `format` (optional): Replay format - `json` (default) or `html` (Kaggle-style visualization)
+  - `json`: Raw replay data for analysis/processing
+  - `html`: Interactive HTML5 animation using rl-arena-env's renderer (same visualization as training)
+
+**Response:**
+- Content-Type: `application/json` (for JSON format) or `text/html` (for HTML format)
+- Content-Disposition: `attachment; filename=replay_{matchId}.{format}`
+- Binary replay file download
+
+**Examples:**
+```bash
+# Download JSON replay (data)
+GET /api/v1/matches/123/replay?format=json
+
+# Download HTML replay (visualization)
+GET /api/v1/matches/123/replay?format=html
+```
+
+**Error Responses:**
+- `404 Not Found`: Match not found or replay not available
+- `500 Internal Server Error`: Failed to access replay file
+
+#### GET /matches/:id/replay-url
+Get the replay URL for a specific match (without downloading the file).
+
+**Query Parameters:**
+- `format` (optional): Replay format - `json` (default) or `html`
+
+**Response:**
+```json
+{
+  "replayUrl": "/storage/replays/replay_123.json",
+  "matchId": "string",
+  "format": "json"
+}
+```
+
+**Examples:**
+```bash
+# Get JSON replay URL
+GET /api/v1/matches/123/replay-url?format=json
+
+# Get HTML replay URL (for embedding in iframe)
+GET /api/v1/matches/123/replay-url?format=html
+```
+
+**Error Responses:**
+- `404 Not Found`: Match not found or replay not available
+
+#### GET /matches/replays
+Get matches with available replays (for Watch functionality).
+
+**Query Parameters:**
+- `agentId` (required): Filter matches by agent ID
+- `page` (optional): Page number (default: 1)
+- `pageSize` (optional): Number of items per page (default: 20)
+
+**Response:**
+```json
+{
+  "matches": [
+    {
+      "id": "string",
+      "environmentId": "string",
+      "agent1Id": "string",
+      "agent2Id": "string",
+      "status": "completed",
+      "winnerId": "string",
+      "agent1Score": 85.5,
+      "agent2Score": 72.3,
+      "agent1EloChange": 15,
+      "agent2EloChange": -15,
+      "replayUrl": "/storage/replays/replay_123.json",
+      "startedAt": "2023-01-01T00:00:00Z",
+      "completedAt": "2023-01-01T00:00:00Z",
+      "createdAt": "2023-01-01T00:00:00Z"
+    }
+  ],
+  "total": 10,
+  "page": 1,
+  "pageSize": 20
+}
+```
+
+**Error Responses:**
+- `400 Bad Request`: Missing required agentId parameter
+
 ### Leaderboard
 
 #### GET /leaderboard

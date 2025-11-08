@@ -105,3 +105,15 @@ func (s *Storage) GetFileURL(filePath string) string {
 	// 프로덕션에서는 S3 URL 등을 반환
 	return fmt.Sprintf("/storage/%s", filePath)
 }
+
+// FileExists 파일 존재 여부 확인
+func (s *Storage) FileExists(filePath string) bool {
+	fullPath := filepath.Join(s.basePath, filePath)
+	_, err := os.Stat(fullPath)
+	return err == nil
+}
+
+// GetFilePath 절대 경로 반환
+func (s *Storage) GetFilePath(filePath string) string {
+	return filepath.Join(s.basePath, filePath)
+}

@@ -11,6 +11,9 @@ bin/
 dist/
 build/
 
+# Mistakenly generated directories
+github.com/
+
 # Test binary, built with `go test -c`
 *.test
 
@@ -31,10 +34,12 @@ go.work.sum
 .env.local
 .env.*.local
 *.env
+!.env.example
 
 # IDE - VSCode
 .vscode/
 *.code-workspace
+.vscode-test/
 
 # IDE - JetBrains (GoLand, IntelliJ)
 .idea/
@@ -86,11 +91,14 @@ log/
 tmp/
 temp/
 *.tmp
+*.bak
+*.backup
 
 # Docker volumes data
 postgres_data/
 redis_data/
 mysql_data/
+storage/
 
 # Air (live reload tool)
 tmp/
@@ -98,6 +106,33 @@ tmp/
 
 # Documentation build
 docs/_build/
+
+# Swagger auto-generated files (regenerate with: swag init)
+docs/docs.go
+docs/swagger.json
+docs/swagger.yaml
+
+# K8s secrets (production)
+k8s/secret.yaml
+k8s/registry-secret.yaml
+
+# Test coverage
+*.cover
+coverage/
+
+# Build artifacts
+*.tar
+*.tar.gz
+*.zip
+
+# Compiled protobuf files (if regenerated)
+# proto/*.pb.go
+# proto/*_grpc.pb.go
+
+# Local testing scripts
+add_pong.go
+test_*.go
+!*_test.go
 site/
 
 # Test cache

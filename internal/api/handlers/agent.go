@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -20,7 +21,17 @@ func NewAgentHandler(agentService *service.AgentService) *AgentHandler {
 	}
 }
 
-// ListAgents 모든 에이전트 목록 조회
+// ListAgents godoc
+// @Summary List all agents
+// @Description Get paginated list of all AI agents
+// @Tags agents
+// @Accept json
+// @Produce json
+// @Param page query int false "Page number" default(1)
+// @Param pageSize query int false "Page size" default(20)
+// @Success 200 {object} map[string]interface{} "List of agents with pagination"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Router /agents [get]
 func (h *AgentHandler) ListAgents(c *gin.Context) {
 	// 페이지네이션 파라미터
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
@@ -42,7 +53,17 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 	})
 }
 
-// GetAgent 특정 에이전트 조회
+// GetAgent godoc
+// @Summary Get agent by ID
+// @Description Get detailed information about a specific agent
+// @Tags agents
+// @Accept json
+// @Produce json
+// @Param id path string true "Agent ID"
+// @Success 200 {object} map[string]interface{} "Agent details"
+// @Failure 404 {object} map[string]string "Agent not found"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Router /agents/{id} [get]
 func (h *AgentHandler) GetAgent(c *gin.Context) {
 	id := c.Param("id")
 
@@ -66,7 +87,19 @@ func (h *AgentHandler) GetAgent(c *gin.Context) {
 	})
 }
 
-// CreateAgent 새 에이전트 생성
+// CreateAgent godoc
+// @Summary Create a new agent
+// @Description Create a new AI agent for the authenticated user
+// @Tags agents
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body models.CreateAgentRequest true "Agent creation details"
+// @Success 201 {object} map[string]interface{} "Created agent"
+// @Failure 400 {object} map[string]string "Invalid request"
+// @Failure 401 {object} map[string]string "Unauthorized"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Router /agents [post]
 func (h *AgentHandler) CreateAgent(c *gin.Context) {
 	var req models.CreateAgentRequest
 
@@ -94,6 +127,9 @@ func (h *AgentHandler) CreateAgent(c *gin.Context) {
 		req.EnvironmentID,
 	)
 	if err != nil {
+		// 에러 로깅 추가
+		fmt.Printf("Agent creation error: %v\n", err)
+
 		if errors.Is(err, service.ErrInvalidEnvironment) {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": "Invalid environment",
@@ -101,8 +137,16 @@ func (h *AgentHandler) CreateAgent(c *gin.Context) {
 			return
 		}
 
+		if errors.Is(err, service.ErrInvalidInput) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "Invalid input",
+			})
+			return
+		}
+
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to create agent",
+			"error":   "Failed to create agent",
+			"details": err.Error(),
 		})
 		return
 	}
@@ -209,5 +253,31 @@ func (h *AgentHandler) GetMyAgents(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"agents": agents,
 		"total":  len(agents),
+	})
+}
+
+// GetAgentStats 에이전트 상대별 전적 통계 조회
+func (h *AgentHandler) GetAgentStats(c *gin.Context) {
+	agentID := c.Param("id")
+
+	stats, err := h.agentService.GetOpponentStats(agentID)
+	if err != nil {
+		if errors.Is(err, service.ErrAgentNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "Agent not found",
+			})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to get agent stats",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"agentId": agentID,
+		"stats":   stats,
+		"total":   len(stats),
 	})
 }
