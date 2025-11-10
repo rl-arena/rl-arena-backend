@@ -25,6 +25,7 @@ type BuilderService struct {
 	namespace       string
 	registryURL     string
 	registrySecret  string
+	useLocalK8s     bool // 로컬 개발 환경 여부
 }
 
 // NewBuilderService BuilderService 생성
@@ -68,6 +69,7 @@ func NewBuilderService(
 		namespace:      namespace,
 		registryURL:    registryURL,
 		registrySecret: registrySecret,
+		useLocalK8s:    useLocalK8s,
 	}, nil
 }
 
@@ -109,6 +111,147 @@ func (s *BuilderService) BuildAgentImage(ctx context.Context, submission *models
 func (s *BuilderService) createKanikoJob(jobName, codeURL, imageTag, submissionID string) *batchv1.Job {
 	backoffLimit := int32(3)
 	ttlSecondsAfterFinished := int32(3600) // 1시간 후 자동 삭제
+
+	// 로컬 환경: Docker-in-Docker 사용
+	if s.useLocalK8s {
+		return s.createDockerBuildJob(jobName, codeURL, imageTag, submissionID, backoffLimit, ttlSecondsAfterFinished)
+	}
+
+	// 프로덕션 환경: Kaniko 사용
+	return s.createKanikoBuildJob(jobName, codeURL, imageTag, submissionID, backoffLimit, ttlSecondsAfterFinished)
+}
+
+// createDockerBuildJob 로컬 개발용 Docker-in-Docker Job 생성
+func (s *BuilderService) createDockerBuildJob(jobName, codeURL, imageTag, submissionID string, backoffLimit, ttlSecondsAfterFinished int32) *batchv1.Job {
+	// URL 기반인지 로컬 파일인지 확인
+	isGitRepo := strings.HasPrefix(codeURL, "http://") || strings.HasPrefix(codeURL, "https://")
+	
+	var initContainers []corev1.Container
+	
+	if isGitRepo {
+		// Git 저장소에서 코드 clone
+		initContainers = append(initContainers, corev1.Container{
+			Name:  "git-clone",
+			Image: "alpine/git:latest",
+			Command: []string{
+				"sh", "-c",
+				fmt.Sprintf("git clone %s /workspace", codeURL),
+			},
+			VolumeMounts: []corev1.VolumeMount{
+				{
+					Name:      "workspace",
+					MountPath: "/workspace",
+				},
+			},
+		})
+	} else {
+		// 로컬 파일 - placeholder 코드 생성
+		initContainers = append(initContainers, corev1.Container{
+			Name:  "create-code",
+			Image: "busybox:latest",
+			Command: []string{
+				"sh", "-c",
+				`cat > /workspace/agent.py << 'EOF'
+# Placeholder agent code
+import gymnasium as gym
+env = gym.make('CartPole-v1')
+EOF
+cat > /workspace/Dockerfile << 'EOF'
+FROM python:3.10-slim
+WORKDIR /app
+RUN pip install gymnasium
+COPY agent.py /app/
+CMD ["python", "agent.py"]
+EOF`,
+			},
+			VolumeMounts: []corev1.VolumeMount{
+				{
+					Name:      "workspace",
+					MountPath: "/workspace",
+				},
+			},
+		})
+	}
+	
+	return &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      jobName,
+			Namespace: s.namespace,
+			Labels: map[string]string{
+				"app":            "rl-arena",
+				"type":           "agent-build",
+				"submission-id":  submissionID,
+			},
+		},
+		Spec: batchv1.JobSpec{
+			BackoffLimit:            &backoffLimit,
+			TTLSecondsAfterFinished: &ttlSecondsAfterFinished,
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"app":  "rl-arena",
+						"type": "agent-build",
+						"job":  jobName,
+					},
+				},
+				Spec: corev1.PodSpec{
+					RestartPolicy:  corev1.RestartPolicyNever,
+					InitContainers: initContainers,
+					Containers: []corev1.Container{
+						{
+							Name:  "docker-build",
+							Image: "docker:24-dind",
+							Command: []string{
+								"sh", "-c",
+								fmt.Sprintf(`
+									# Docker 데몬 시작 대기
+									dockerd-entrypoint.sh &
+									sleep 5
+									
+									# 이미지 빌드
+									cd /workspace
+									docker build -t %s .
+									
+									echo "Build completed successfully"
+								`, imageTag),
+							},
+							SecurityContext: &corev1.SecurityContext{
+								Privileged: func() *bool { b := true; return &b }(),
+							},
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									Name:      "workspace",
+									MountPath: "/workspace",
+								},
+								{
+									Name:      "docker-graph-storage",
+									MountPath: "/var/lib/docker",
+								},
+							},
+						},
+					},
+					Volumes: []corev1.Volume{
+						{
+							Name: "workspace",
+							VolumeSource: corev1.VolumeSource{
+								EmptyDir: &corev1.EmptyDirVolumeSource{},
+							},
+						},
+						{
+							Name: "docker-graph-storage",
+							VolumeSource: corev1.VolumeSource{
+								EmptyDir: &corev1.EmptyDirVolumeSource{},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+// createKanikoBuildJob 프로덕션용 Kaniko Job 생성
+func (s *BuilderService) createKanikoBuildJob(jobName, codeURL, imageTag, submissionID string, backoffLimit, ttlSecondsAfterFinished int32) *batchv1.Job {
 
 	// URL 기반인지 로컬 파일인지 확인
 	isGitRepo := strings.HasPrefix(codeURL, "http://") || strings.HasPrefix(codeURL, "https://")
@@ -218,8 +361,6 @@ EOF`,
 								"--dockerfile=/workspace/Dockerfile",
 								"--context=/workspace",
 								fmt.Sprintf("--destination=%s", imageTag),
-								"--insecure",
-								"--skip-tls-verify",
 								"--cache=true",
 								"--cache-ttl=24h",
 							},
