@@ -68,6 +68,9 @@ func (m *BuildMonitor) Start() {
 	// Watch context 생성
 	m.watchCtx, m.watchCancel = context.WithCancel(context.Background())
 
+	// 시작 시 pending submission 처리
+	go m.processPendingSubmissions()
+
 	m.wg.Add(1)
 	go m.watchLoop()
 }
@@ -431,5 +434,73 @@ func (m *BuildMonitor) handleBuildFailure(ctx context.Context, submission *model
 			errorMsg,
 			"",
 		)
+	}
+}
+
+// processPendingSubmissions 시작 시 pending 상태인 submission들을 처리
+func (m *BuildMonitor) processPendingSubmissions() {
+	ctx := context.Background()
+	
+	// pending 상태인 모든 Submission 조회
+	submissions, err := m.submissionRepo.FindByStatus(models.SubmissionStatusPending)
+	if err != nil {
+		m.logger.Error("Failed to find pending submissions", zap.Error(err))
+		return
+	}
+
+	if len(submissions) == 0 {
+		m.logger.Info("No pending submissions to process")
+		return
+	}
+
+	m.logger.Info("Processing pending submissions",
+		zap.Int("count", len(submissions)))
+
+	for _, submission := range submissions {
+		// 상태를 'building'으로 업데이트
+		status := models.SubmissionStatusBuilding
+		if err := m.submissionRepo.UpdateStatus(submission.ID, status, nil, nil); err != nil {
+			m.logger.Error("Failed to update submission status to building",
+				zap.String("submissionId", submission.ID),
+				zap.Error(err))
+			continue
+		}
+		
+		m.logger.Info("Starting Docker image build for pending submission",
+			zap.String("submissionId", submission.ID),
+			zap.String("agentId", submission.AgentID))
+		
+		// Kaniko 빌드 실행
+		if err := m.builderService.BuildAgentImage(ctx, submission); err != nil {
+			m.logger.Error("Docker image build failed",
+				zap.String("submissionId", submission.ID),
+				zap.Error(err))
+			
+			// 빌드 실패 상태로 업데이트
+			errMsg := err.Error()
+			failedStatus := models.SubmissionStatusBuildFailed
+			if updateErr := m.submissionRepo.UpdateStatus(submission.ID, failedStatus, nil, &errMsg); updateErr != nil {
+				m.logger.Error("Failed to update submission status to build_failed",
+					zap.String("submissionId", submission.ID),
+					zap.Error(updateErr))
+			}
+			continue
+		}
+		
+		// Build 정보 데이터베이스에 저장
+		if err := m.submissionRepo.UpdateBuildInfo(
+			submission.ID,
+			submission.BuildJobName,
+			submission.DockerImageURL,
+			submission.BuildPodName,
+		); err != nil {
+			m.logger.Error("Failed to update build info",
+				zap.String("submissionId", submission.ID),
+				zap.Error(err))
+		}
+		
+		m.logger.Info("Docker image build job created for pending submission",
+			zap.String("submissionId", submission.ID),
+			zap.Stringp("jobName", submission.BuildJobName))
 	}
 }
