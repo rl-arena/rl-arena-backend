@@ -4,6 +4,7 @@
 -- Drop all tables in correct order (reverse of dependencies)
 DROP TABLE IF EXISTS agent_match_stats CASCADE;
 DROP TABLE IF EXISTS matches CASCADE;
+DROP TABLE IF EXISTS matchmaking_queue CASCADE;
 DROP TABLE IF EXISTS submissions CASCADE;
 DROP TABLE IF EXISTS agents CASCADE;
 DROP TABLE IF EXISTS environments CASCADE;
@@ -151,6 +152,23 @@ CREATE TABLE agent_match_stats (
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
+
+-- Matchmaking queue table
+CREATE TABLE matchmaking_queue (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    agent_id UUID NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    environment_id VARCHAR(50) NOT NULL REFERENCES environments(id),
+    elo_rating INTEGER NOT NULL,
+    priority INTEGER DEFAULT 5,
+    queued_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    status VARCHAR(50) DEFAULT 'waiting',
+    matched_at TIMESTAMP,
+    UNIQUE(agent_id, environment_id)
+);
+
+CREATE INDEX idx_matchmaking_queue_status ON matchmaking_queue(status);
+CREATE INDEX idx_matchmaking_queue_environment ON matchmaking_queue(environment_id);
+CREATE INDEX idx_matchmaking_queue_queued_at ON matchmaking_queue(queued_at);
 
 CREATE INDEX idx_agent_match_stats_last_match ON agent_match_stats(last_match_at);
 CREATE INDEX idx_agent_match_stats_daily_reset ON agent_match_stats(daily_reset_at);
