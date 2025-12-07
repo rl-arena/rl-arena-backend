@@ -26,6 +26,8 @@ RUN apk --no-cache add ca-certificates tzdata
 # 빌더에서 바이너리 복사
 COPY --from=builder /app/bin/server /app/server
 
+RUN chmod +x /app/server
+
 # 환경변수 설정
 ENV TZ=Asia/Seoul
 
