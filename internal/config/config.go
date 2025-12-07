@@ -59,7 +59,7 @@ func Load() (*Config, error) {
 		MaxELODifference:         200,
 		ExecutorURL:              getEnv("EXECUTOR_URL", "http://localhost:8081"),
 		StoragePath:              getEnv("STORAGE_PATH", "./storage"),
-		CORSAllowedOrigins:       []string{"http://localhost:3000", "http://localhost:5173"},
+		CORSAllowedOrigins:       []string{"https://rl-arena.github.io", "http://localhost:8080", "http://localhost:3000", "http://localhost:5173"},
 		K8sNamespace:             getEnv("K8S_NAMESPACE", "rl-arena"),
 		UseK8s:                   getEnv("USE_K8S", "false") == "true",
 		ContainerRegistryURL:     getEnv("CONTAINER_REGISTRY_URL", "docker.io/rl-arena"),
