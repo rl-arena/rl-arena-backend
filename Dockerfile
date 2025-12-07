@@ -9,6 +9,8 @@ RUN go mod download
 # 소스 코드 복사
 COPY . .
 
+RUN go install github.com/swaggo/swag/cmd/swag@latest && \
+	swag init
 # 빌드
 RUN CGO_ENABLED=0 GOOS=linux go build -o /app/bin/server cmd/server/main.go
 
